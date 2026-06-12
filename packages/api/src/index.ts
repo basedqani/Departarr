@@ -11,6 +11,7 @@ import staticFiles from '@fastify/static'
 import { existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { spawnSync } from 'child_process'
 import { prisma } from './lib/prisma.js'
 import { authRoutes } from './routes/auth.js'
 import { flightRoutes } from './routes/flights.js'
@@ -23,6 +24,20 @@ import { startPoller } from './services/poller.js'
 import { wsClients } from './lib/wsClients.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// In dev the server applies its own migrations so a fresh clone boots with no
+// extra steps. The container does this in its CMD before node starts.
+if (process.env.NODE_ENV !== 'production') {
+  const result = spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+    cwd: join(__dirname, '..'),
+    env: process.env,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  })
+  if (result.status !== 0) {
+    console.error('prisma migrate deploy failed — continuing, but queries may fail')
+  }
+}
 
 const app = Fastify({ logger: true })
 

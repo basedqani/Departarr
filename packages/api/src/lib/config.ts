@@ -27,6 +27,13 @@ function getDataDir(): string {
   return join(__dirname, '../../../../data')
 }
 
+// Absolute path with forward slashes: Prisma resolves relative file: URLs
+// against the schema directory (not cwd), which silently scatters .db files
+// when the CLI and server run from different places.
+export function getDefaultDatabaseUrl(): string {
+  return `file:${join(getDataDir(), 'departarr.db').replace(/\\/g, '/')}`
+}
+
 export async function initConfig(): Promise<AppConfig> {
   if (_config) return _config
 
@@ -35,12 +42,8 @@ export async function initConfig(): Promise<AppConfig> {
     mkdirSync(dataDir, { recursive: true })
   }
 
-  // Set DATABASE_URL before PrismaClient is ever imported
-  const defaultDb = process.env.NODE_ENV === 'production'
-    ? 'file:/data/departarr.db'
-    : `file:${join(dataDir, 'departarr.db')}`
   if (!process.env.DATABASE_URL) {
-    process.env.DATABASE_URL = defaultDb
+    process.env.DATABASE_URL = getDefaultDatabaseUrl()
   }
 
   // Load or create persisted config.json
