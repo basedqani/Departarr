@@ -8,8 +8,7 @@
   ],
   "scripts": {
     "dev": "concurrently -k -n api,web -c cyan,green \"npm run dev --workspace=packages/api\" \"npm run dev --workspace=apps/web\"",
-    "build": "npm run build --workspace=packages/api && npm run build --workspace=apps/web",
-    "generate-vapid": "npm run generate-vapid --workspace=packages/api"
+    "build": "npm run build --workspace=packages/api && npm run build --workspace=apps/web"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

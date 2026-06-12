@@ -48,6 +48,81 @@ function ChevronRight(): React.ReactElement {
   )
 }
 
+interface SettingRowProps {
+  label: string
+  hint: string
+  hintLink?: string
+  hintLinkText?: string
+  currentValue: string | null
+  onSave: (value: string) => Promise<void>
+}
+
+function SettingRow({ label, hint, hintLink, hintLinkText, currentValue, onSave }: SettingRowProps): React.ReactElement {
+  const [editing, setEditing] = useState(false)
+  const [inputValue, setInputValue] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave(): Promise<void> {
+    if (!inputValue.trim()) return
+    setSaving(true)
+    try {
+      await onSave(inputValue.trim())
+      setEditing(false)
+      setInputValue('')
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div className="settings-row-label">{label}</div>
+          <div className="settings-row-sub">
+            {hint}
+            {hintLink && hintLinkText && (
+              <> — <a href={hintLink} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>{hintLinkText}</a></>
+            )}
+          </div>
+          {currentValue && !editing && (
+            <div className="settings-row-sub" style={{ fontFamily: 'monospace', marginTop: '0.2rem' }}>{currentValue}</div>
+          )}
+        </div>
+        <button
+          className="secondary"
+          onClick={() => { setEditing(e => !e); setInputValue('') }}
+          style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: '1rem' }}
+        >
+          {editing ? 'Cancel' : currentValue ? 'Update' : 'Set'}
+        </button>
+      </div>
+      {editing && (
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <input
+            type="text"
+            value={inputValue}
+            onChange={e => setInputValue(e.target.value)}
+            placeholder={`Enter ${label.toLowerCase()}…`}
+            style={{ flex: 1, fontSize: '0.85rem', padding: '0.4rem 0.6rem', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '0.5rem', color: 'var(--text-primary)' }}
+            onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
+            autoFocus
+          />
+          <button
+            onClick={() => void handleSave()}
+            disabled={saving || !inputValue.trim()}
+            style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function SettingsPage(): React.ReactElement {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -57,6 +132,10 @@ export function SettingsPage(): React.ReactElement {
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
   const { data: user } = useQuery({ queryKey: ['me'], queryFn: api.auth.me })
+  const { data: settings, refetch: refetchSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.settings.get,
+  })
 
   function handleLogout(): void {
     clearToken()
@@ -90,6 +169,11 @@ export function SettingsPage(): React.ReactElement {
     }
   }
 
+  async function saveSetting(key: string, value: string): Promise<void> {
+    await api.settings.set(key, value)
+    await refetchSettings()
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -115,6 +199,39 @@ export function SettingsPage(): React.ReactElement {
           <div className="settings-row-label" style={{ color: 'var(--cancelled)' }}>Sign out</div>
           <ChevronRight />
         </div>
+      </div>
+
+      {/* Data Sources */}
+      <div className="settings-section">
+        <div className="settings-section-title">Data Sources</div>
+        <SettingRow
+          label="FlightAware API Key"
+          hint="Real-time flight data"
+          hintLink="https://www.flightaware.com/commercial/aeroapi"
+          hintLinkText="Get a key at flightaware.com"
+          currentValue={(settings?.flightaware_api_key as string | null) ?? null}
+          onSave={v => saveSetting('flightaware_api_key', v)}
+        />
+        <SettingRow
+          label="Google Client ID"
+          hint="Required for Google Calendar import"
+          hintLink="https://console.cloud.google.com"
+          hintLinkText="console.cloud.google.com"
+          currentValue={(settings?.google_client_id as string | null) ?? null}
+          onSave={v => saveSetting('google_client_id', v)}
+        />
+        <SettingRow
+          label="Google Client Secret"
+          hint="Required for Google Calendar import"
+          currentValue={(settings?.google_client_secret as string | null) ?? null}
+          onSave={v => saveSetting('google_client_secret', v)}
+        />
+        <SettingRow
+          label="Contact Email"
+          hint="Used as VAPID subject for push notifications (e.g. mailto:you@example.com)"
+          currentValue={(settings?.vapid_subject as string | null) ?? null}
+          onSave={v => saveSetting('vapid_subject', v)}
+        />
       </div>
 
       {/* Notifications */}

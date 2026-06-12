@@ -1,3 +1,5 @@
+import { getSettingWithEnvFallback } from '../lib/settings.js'
+
 const AEROAPI_BASE = 'https://aeroapi.flightaware.com/aeroapi'
 
 export interface FlightData {
@@ -22,8 +24,8 @@ export interface FlightData {
   registration?: string
 }
 
-function getApiKey(): string {
-  return process.env.FLIGHTAWARE_API_KEY ?? ''
+async function getApiKey(): Promise<string> {
+  return (await getSettingWithEnvFallback('flightaware_api_key', 'FLIGHTAWARE_API_KEY')) ?? ''
 }
 
 function parseDate(val: string | null | undefined): Date | undefined {
@@ -58,9 +60,9 @@ function mapFlight(f: any): FlightData {
 }
 
 export async function lookupFlight(ident: string, date: string): Promise<FlightData | null> {
-  const apiKey = getApiKey()
+  const apiKey = await getApiKey()
   if (!apiKey) {
-    console.warn('FLIGHTAWARE_API_KEY not set — returning stub flight data')
+    console.warn('FlightAware API key not set — returning stub flight data')
     return stubFlight(ident, date)
   }
 
@@ -83,7 +85,7 @@ export async function lookupFlight(ident: string, date: string): Promise<FlightD
 }
 
 export async function fetchFlightById(faFlightId: string): Promise<FlightData | null> {
-  const apiKey = getApiKey()
+  const apiKey = await getApiKey()
   if (!apiKey) return null
 
   const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(faFlightId)}`

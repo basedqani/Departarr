@@ -88,6 +88,12 @@ export const api = {
   calendar: {
     sync: () => request<{ flightsFound: number }>('/calendar/sync', { method: 'POST' }),
   },
+
+  settings: {
+    get: () => request<Record<string, string | null>>('/settings'),
+    set: (key: string, value: string) =>
+      request<{ ok: boolean }>('/settings', { method: 'PUT', body: JSON.stringify({ key, value }) }),
+  },
 }
 
 // Types

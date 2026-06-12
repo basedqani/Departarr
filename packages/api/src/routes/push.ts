@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
+import { getConfig } from '../lib/config.js'
 import { authMiddleware } from '../middleware/auth.js'
 
 const subscribeSchema = z.object({
@@ -14,7 +15,7 @@ const subscribeSchema = z.object({
 export async function pushRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/push/vapid-public-key — no auth
   app.get('/vapid-public-key', async (_req, reply) => {
-    return reply.send({ publicKey: process.env.VAPID_PUBLIC_KEY ?? '' })
+    return reply.send({ publicKey: getConfig().vapidPublicKey })
   })
 
   // POST /api/push/subscribe

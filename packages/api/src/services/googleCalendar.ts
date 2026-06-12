@@ -1,18 +1,28 @@
 import { google } from 'googleapis'
 import { prisma } from '../lib/prisma.js'
+import { getSettingWithEnvFallback } from '../lib/settings.js'
 import { detectFlightsInEvent, extractEventDate } from './flightDetector.js'
 import { lookupFlight } from './flightAware.js'
+import type { FastifyRequest } from 'fastify'
 
-function getOAuthClient() {
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  )
+async function getOAuthClient(req?: FastifyRequest) {
+  const clientId = await getSettingWithEnvFallback('google_client_id', 'GOOGLE_CLIENT_ID')
+  const clientSecret = await getSettingWithEnvFallback('google_client_secret', 'GOOGLE_CLIENT_SECRET')
+
+  // Derive redirect URI from request host, with env override
+  let redirectUri = process.env.GOOGLE_REDIRECT_URI
+  if (!redirectUri && req) {
+    const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'http'
+    const host = req.headers.host ?? 'localhost'
+    redirectUri = `${proto}://${host}/api/auth/google/callback`
+  }
+  redirectUri = redirectUri ?? 'http://localhost:8080/api/auth/google/callback'
+
+  return new google.auth.OAuth2(clientId ?? undefined, clientSecret ?? undefined, redirectUri)
 }
 
-export function getGoogleOAuthUrl(state: string): string {
-  const oauth2Client = getOAuthClient()
+export async function getGoogleOAuthUrl(state: string, req?: FastifyRequest): Promise<string> {
+  const oauth2Client = await getOAuthClient(req)
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/calendar.readonly'],
@@ -21,8 +31,8 @@ export function getGoogleOAuthUrl(state: string): string {
   })
 }
 
-export async function exchangeCodeForTokens(userId: string, code: string): Promise<void> {
-  const oauth2Client = getOAuthClient()
+export async function exchangeCodeForTokens(userId: string, code: string, req?: FastifyRequest): Promise<void> {
+  const oauth2Client = await getOAuthClient(req)
   const { tokens } = await oauth2Client.getToken(code)
 
   await prisma.calendarConnection.upsert({
@@ -53,7 +63,7 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
   })
   if (!connection) return 0
 
-  const oauth2Client = getOAuthClient()
+  const oauth2Client = await getOAuthClient()
   oauth2Client.setCredentials({
     access_token: connection.accessToken,
     refresh_token: connection.refreshToken,

@@ -72,7 +72,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(401).send({ error: 'Invalid token' })
     }
     const { getGoogleOAuthUrl } = await import('../services/googleCalendar.js')
-    return reply.redirect(getGoogleOAuthUrl(token))
+    return reply.redirect(await getGoogleOAuthUrl(token, req))
   })
 
   // Google OAuth callback
@@ -91,7 +91,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(401).send({ error: 'Invalid state token' })
     }
 
-    await exchangeCodeForTokens(userId, code)
-    return reply.redirect(`${process.env.APP_URL ?? ''}/settings?calendar=connected`)
+    await exchangeCodeForTokens(userId, code, req)
+
+    // Derive app URL from request host for redirect
+    const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'http'
+    const host = req.headers.host ?? 'localhost'
+    const appUrl = process.env.APP_URL ?? `${proto}://${host}`
+    return reply.redirect(`${appUrl}/settings?calendar=connected`)
   })
 }

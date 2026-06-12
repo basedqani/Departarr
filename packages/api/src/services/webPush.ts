@@ -1,13 +1,19 @@
 import webpush from 'web-push'
 import { prisma } from '../lib/prisma.js'
+import { getConfig } from '../lib/config.js'
+import { getSettingWithEnvFallback } from '../lib/settings.js'
 
 let initialized = false
 
-function ensureInitialized(): void {
+async function ensureInitialized(): Promise<void> {
   if (initialized) return
-  const publicKey = process.env.VAPID_PUBLIC_KEY
-  const privateKey = process.env.VAPID_PRIVATE_KEY
-  const subject = process.env.VAPID_SUBJECT ?? 'mailto:admin@example.com'
+
+  const cfg = getConfig()
+  const publicKey = cfg.vapidPublicKey
+  const privateKey = cfg.vapidPrivateKey
+  const subject =
+    (await getSettingWithEnvFallback('vapid_subject', 'VAPID_SUBJECT')) ??
+    'mailto:admin@example.com'
 
   if (publicKey && privateKey) {
     webpush.setVapidDetails(subject, publicKey, privateKey)
@@ -16,7 +22,7 @@ function ensureInitialized(): void {
 }
 
 export async function sendPushToUser(userId: string, payload: object): Promise<void> {
-  ensureInitialized()
+  await ensureInitialized()
   if (!initialized) return
 
   const subs = await prisma.pushSubscription.findMany({ where: { userId } })
