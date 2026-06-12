@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion } from 'framer-motion'
 import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
 import { formatDate } from '../lib/format'
@@ -14,7 +15,12 @@ export function TripViewPage(): React.ReactElement {
     queryFn: () => api.trips.get(id!),
   })
 
-  if (isLoading) return <div className="loading">Loading…</div>
+  if (isLoading) return (
+    <div className="loading">
+      <div className="loading-spinner" />
+      Loading…
+    </div>
+  )
   if (!trip) return <div className="error-box">Trip not found</div>
 
   async function handleDelete(): Promise<void> {
@@ -25,17 +31,23 @@ export function TripViewPage(): React.ReactElement {
   }
 
   return (
-    <>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+    >
       <div className="page-header">
         <div>
           <h1>{trip.name}</h1>
           {trip.startDate && (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
               {formatDate(trip.startDate)}{trip.endDate ? ` – ${formatDate(trip.endDate)}` : ''}
             </p>
           )}
         </div>
-        <button className="danger" onClick={() => void handleDelete()}>Delete</button>
+        <button className="danger" style={{ padding: '0.45rem 0.875rem', fontSize: '0.85rem' }} onClick={() => void handleDelete()}>
+          Delete
+        </button>
       </div>
 
       {trip.flights.length === 0 && (
@@ -45,9 +57,9 @@ export function TripViewPage(): React.ReactElement {
         </div>
       )}
 
-      {trip.flights.map(f => (
-        <FlightCard key={f.id} flight={f} showDate />
+      {trip.flights.map((f, i) => (
+        <FlightCard key={f.id} flight={f} showDate index={i} />
       ))}
-    </>
+    </motion.div>
   )
 }

@@ -12,8 +12,8 @@ export default defineConfig({
         name: 'Departarr',
         short_name: 'Departarr',
         description: 'Self-hosted flight tracker',
-        theme_color: '#0B1120',
-        background_color: '#0B1120',
+        theme_color: '#05080f',
+        background_color: '#05080f',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
@@ -41,6 +41,14 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:3000', changeOrigin: true },
       '/ws': { target: 'ws://localhost:3000', ws: true },
+    },
+  },
+  optimizeDeps: {
+    exclude: ['sharp'],
+  },
+  build: {
+    rollupOptions: {
+      external: ['sharp'],
     },
   },
 })

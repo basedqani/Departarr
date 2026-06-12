@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Dark rounded square background -->
+  <rect width="512" height="512" rx="110" fill="#05080f"/>
+  <!-- Subtle radial glow -->
+  <radialGradient id="glow" cx="50%" cy="35%" r="55%">
+    <stop offset="0%" stop-color="#4da8ff" stop-opacity="0.12"/>
+    <stop offset="100%" stop-color="#4da8ff" stop-opacity="0"/>
+  </radialGradient>
+  <rect width="512" height="512" rx="110" fill="url(#glow)"/>
+  <!-- Plane body ascending -->
+  <path
+    d="M348 287v-32l-120-75V96c0-22.1-17.9-40-40-40s-40 17.9-40 40v84L28 252v32l120-37.5V320l-28 21v28l52-14.5 52 14.5v-28l-28-21v-65.5L348 287z"
+    fill="#4da8ff"
+  />
+  <!-- Contrail streaks -->
+  <path d="M318 178 L412 144" stroke="#4da8ff" strokeWidth="14" strokeLinecap="round" opacity="0.35"/>
+  <path d="M334 200 L428 172" stroke="#4da8ff" strokeWidth="9" strokeLinecap="round" opacity="0.2"/>
+</svg>

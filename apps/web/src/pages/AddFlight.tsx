@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
+import { motion } from 'framer-motion'
 import { api } from '../lib/api'
 
 export function AddFlightPage(): React.ReactElement {
@@ -37,12 +38,16 @@ export function AddFlightPage(): React.ReactElement {
   }
 
   return (
-    <>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22 }}
+    >
       <div className="page-header">
         <h1>Add Flight</h1>
       </div>
 
-      <div className="card">
+      <div className="card" style={{ maxWidth: 480 }}>
         {error && <div className="error-box">{error}</div>}
 
         <form onSubmit={(e) => void handleSubmit(e)}>
@@ -55,7 +60,8 @@ export function AddFlightPage(): React.ReactElement {
                 onChange={e => setIdent(e.target.value.toUpperCase())}
                 placeholder="e.g. DL123"
                 required
-                style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                autoCapitalize="characters"
+                style={{ textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, fontSize: '1.05rem' }}
               />
             </div>
             <div className="form-group">
@@ -82,8 +88,17 @@ export function AddFlightPage(): React.ReactElement {
           )}
 
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-            <button type="submit" disabled={loading}>
-              {loading ? 'Looking up…' : 'Add flight'}
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ flex: 1, padding: '0.75rem', position: 'relative' }}
+            >
+              {loading ? (
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  <span className="loading-spinner" style={{ width: 16, height: 16 }} />
+                  Looking up…
+                </span>
+              ) : 'Add flight'}
             </button>
             <button type="button" className="secondary" onClick={() => navigate(-1)}>
               Cancel
@@ -91,6 +106,6 @@ export function AddFlightPage(): React.ReactElement {
           </div>
         </form>
       </div>
-    </>
+    </motion.div>
   )
 }

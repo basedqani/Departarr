@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion } from 'framer-motion'
 import { api, clearToken } from '../lib/api'
 
 async function subscribeToPush(): Promise<void> {
@@ -37,6 +38,14 @@ function urlB64ToUint8Array(base64String: string): ArrayBuffer {
   const rawData = atob(base64)
   const arr = Uint8Array.from([...rawData].map(c => c.charCodeAt(0)))
   return arr.buffer as ArrayBuffer
+}
+
+function ChevronRight(): React.ReactElement {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  )
 }
 
 export function SettingsPage(): React.ReactElement {
@@ -82,67 +91,96 @@ export function SettingsPage(): React.ReactElement {
   }
 
   return (
-    <>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+    >
       <div className="page-header">
         <h1>Settings</h1>
       </div>
 
       {/* Account */}
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Account</h2>
+      <div className="settings-section">
+        <div className="settings-section-title">Account</div>
         {user && (
-          <p style={{ marginBottom: '0.75rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Signed in as <strong style={{ color: 'var(--text)' }}>{user.email}</strong>
-          </p>
+          <div className="settings-row">
+            <div>
+              <div className="settings-row-label">{user.name}</div>
+              <div className="settings-row-sub">{user.email}</div>
+            </div>
+          </div>
         )}
-        <button className="secondary danger" onClick={handleLogout}>Sign out</button>
+        <div className="settings-row" style={{ cursor: 'pointer' }} onClick={handleLogout}>
+          <div className="settings-row-label" style={{ color: 'var(--cancelled)' }}>Sign out</div>
+          <ChevronRight />
+        </div>
       </div>
 
-      {/* Push notifications */}
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Push Notifications</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
-          Get notified of gate changes, delays, and baggage claim info. Requires iOS 16.4+ when installed as a PWA.
-        </p>
-        {pushSuccess ? (
-          <p style={{ color: 'var(--green)', fontSize: '0.9rem' }}>Notifications enabled!</p>
-        ) : (
-          <button onClick={() => void handleEnableNotifications()} disabled={pushLoading}>
-            {pushLoading ? 'Enabling…' : 'Enable notifications'}
-          </button>
-        )}
+      {/* Notifications */}
+      <div className="settings-section">
+        <div className="settings-section-title">Notifications</div>
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">Push Notifications</div>
+            <div className="settings-row-sub">Gate changes, delays, and baggage claim info.<br />Requires iOS 16.4+ when installed as PWA.</div>
+          </div>
+          {pushSuccess ? (
+            <span style={{ color: 'var(--on-time)', fontSize: '0.8rem', fontWeight: 600 }}>Enabled</span>
+          ) : (
+            <button
+              onClick={() => void handleEnableNotifications()}
+              disabled={pushLoading}
+              style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              {pushLoading ? 'Enabling…' : 'Enable'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Google Calendar */}
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Google Calendar</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
-          Connect your Google Calendar to automatically detect and import flights from your events.
-        </p>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <a href={`/api/auth/google?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`}>
-            <button className="secondary">Connect Google Calendar</button>
+      {/* Calendar */}
+      <div className="settings-section">
+        <div className="settings-section-title">Calendar</div>
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">Google Calendar</div>
+            <div className="settings-row-sub">Automatically detect and import flights from your calendar events.</div>
+          </div>
+          <a href={`/api/auth/google?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`} style={{ flexShrink: 0 }}>
+            <button className="secondary" style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+              Connect
+            </button>
           </a>
-          <button onClick={() => void handleCalendarSync()} disabled={syncLoading} className="secondary">
-            {syncLoading ? 'Syncing…' : 'Sync now'}
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-label">Sync now</div>
+          <button className="secondary" onClick={() => void handleCalendarSync()} disabled={syncLoading} style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+            {syncLoading ? 'Syncing…' : 'Sync'}
           </button>
         </div>
         {syncResult && (
-          <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>{syncResult}</p>
+          <div style={{ padding: '0.5rem 1rem 0.875rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{syncResult}</div>
         )}
       </div>
 
-      {/* iOS install */}
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Install on iOS</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: 1.6 }}>
-          To install Departarr on your iPhone or iPad:<br />
-          1. Open this page in <strong>Safari</strong><br />
-          2. Tap the <strong>Share</strong> button (box with arrow)<br />
-          3. Tap <strong>Add to Home Screen</strong><br />
-          4. Push notifications require iOS 16.4 or later
-        </p>
+      {/* About */}
+      <div className="settings-section">
+        <div className="settings-section-title">About</div>
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">Install on iOS</div>
+            <div className="settings-row-sub">
+              Open in Safari → Share → Add to Home Screen.<br />
+              Push notifications require iOS 16.4 or later.
+            </div>
+          </div>
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-label">Departarr</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>v0.1.0</div>
+        </div>
       </div>
-    </>
+    </motion.div>
   )
 }

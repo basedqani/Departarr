@@ -1,5 +1,6 @@
 interface Props {
   status: string
+  size?: 'sm' | 'md'
 }
 
 export function StatusBadge({ status }: Props): React.ReactElement {
