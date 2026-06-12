@@ -60,11 +60,19 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(user)
   })
 
-  // Google OAuth start
-  app.get('/google', { preHandler: authMiddleware }, async (req, reply) => {
+  // Google OAuth start — hit via browser navigation, so the JWT arrives as a
+  // query param rather than an Authorization header. It is verified here and
+  // passed through the OAuth state param so the callback can identify the user.
+  app.get('/google', async (req, reply) => {
+    const { token } = req.query as { token?: string }
+    if (!token) return reply.code(401).send({ error: 'Missing token' })
+    try {
+      app.jwt.verify(token)
+    } catch {
+      return reply.code(401).send({ error: 'Invalid token' })
+    }
     const { getGoogleOAuthUrl } = await import('../services/googleCalendar.js')
-    const url = getGoogleOAuthUrl()
-    return reply.redirect(url)
+    return reply.redirect(getGoogleOAuthUrl(token))
   })
 
   // Google OAuth callback

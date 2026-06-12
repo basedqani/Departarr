@@ -120,7 +120,7 @@ export function SettingsPage(): React.ReactElement {
           Connect your Google Calendar to automatically detect and import flights from your events.
         </p>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <a href="/api/auth/google">
+          <a href={`/api/auth/google?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`}>
             <button className="secondary">Connect Google Calendar</button>
           </a>
           <button onClick={() => void handleCalendarSync()} disabled={syncLoading} className="secondary">
