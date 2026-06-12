@@ -25,10 +25,17 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
     const originAirport = getAirport(origin)
     const destAirport = getAirport(destination)
 
+    // Map creation is async (dynamic import); if the effect is cleaned up
+    // before it completes, the orphaned map must be removed or it leaks into
+    // the container alongside the replacement.
+    let cancelled = false
+
     void (async () => {
       const maplibre = await import('maplibre-gl')
       const Map = maplibre.Map
       const Marker = maplibre.Marker
+
+      if (cancelled || !containerRef.current) return
 
       const map = new Map({
         container: containerRef.current!,
@@ -43,6 +50,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
       mapRef.current = map
 
       map.on('load', () => {
+        if (cancelled) return
         // Globe projection (MapLibre v5)
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -171,22 +179,26 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
         planeEl.style.cssText = 'pointer-events:none;transform-origin:center center;'
         planeEl.innerHTML = PLANE_SVG
 
-        const marker = new Marker({ element: planeEl, anchor: 'center' })
+        // rotationAlignment 'map' keeps the plane pointed along its course as
+        // the camera moves; rotation must go through setRotation — writing
+        // style.transform directly would clobber MapLibre's positioning.
+        const marker = new Marker({ element: planeEl, anchor: 'center', rotationAlignment: 'map' })
         markerRef.current = marker
 
         // Position plane
         const planePos = computePlanePosition({ origin, destination, position, departureScheduled, arrivalScheduled, status })
         if (planePos) {
           marker.setLngLat([planePos.lon, planePos.lat])
-          marker.addTo(map)
           if (planePos.heading !== undefined) {
-            planeEl.style.transform = `rotate(${planePos.heading}deg)`
+            marker.setRotation(planePos.heading)
           }
+          marker.addTo(map)
         }
       })
     })()
 
     return () => {
+      cancelled = true
       markerRef.current?.remove()
       markerRef.current = null
       mapRef.current?.remove()
@@ -204,13 +216,10 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
     const planePos = computePlanePosition({ origin, destination, position, departureScheduled, arrivalScheduled, status })
     if (planePos) {
       marker.setLngLat([planePos.lon, planePos.lat])
-      const el = marker.getElement()
       if (planePos.heading !== undefined) {
-        el.style.transform = `rotate(${planePos.heading}deg)`
+        marker.setRotation(planePos.heading)
       }
-      if (!marker.getLngLat()) {
-        marker.addTo(map)
-      }
+      marker.addTo(map)
     }
   }, [position, origin, destination, departureScheduled, arrivalScheduled, status])
 
