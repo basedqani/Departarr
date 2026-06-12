@@ -39,12 +39,13 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api': { target: 'http://localhost:3000', changeOrigin: true },
-      '/ws': { target: 'ws://localhost:3000', ws: true },
+      '/api': { target: 'http://localhost:8080', changeOrigin: true },
+      '/ws': { target: 'ws://localhost:8080', ws: true },
     },
   },
   optimizeDeps: {
     exclude: ['sharp'],
+    include: ['@turf/great-circle', '@turf/helpers'],
   },
   build: {
     rollupOptions: {

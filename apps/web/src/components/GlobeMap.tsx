@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react'
+import greatCircle from '@turf/great-circle'
+import { point } from '@turf/helpers'
 import type { AircraftPosition } from '../lib/api'
 import { getAirport } from '../lib/airports'
 
@@ -75,15 +77,12 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
 
         if (!originAirport || !destAirport) return
 
-        // Great-circle arc via turf
+        // Great-circle arc via turf (statically imported at file top)
         void (async () => {
           try {
-            const turfGC = await import('@turf/great-circle')
-            const turfHelpers = await import('@turf/helpers')
-            const greatCircleFn = (turfGC.default ?? turfGC.greatCircle) as typeof turfGC.default
-            const start = turfHelpers.point([originAirport.lon, originAirport.lat])
-            const end = turfHelpers.point([destAirport.lon, destAirport.lat])
-            const arc = greatCircleFn(start, end, { npoints: 100 })
+            const start = point([originAirport.lon, originAirport.lat])
+            const end = point([destAirport.lon, destAirport.lat])
+            const arc = greatCircle(start, end, { npoints: 100 })
 
             // Add source
             if (!map.getSource('flight-arc')) {
@@ -152,25 +151,39 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
               })
             }
 
-            // Camera: fit arc
-            const coords = (arc.geometry.coordinates as number[][])
-            const lons = coords.map(c => c[0])
-            const lats = coords.map(c => c[1])
-            const minLon = Math.min(...lons)
-            const maxLon = Math.max(...lons)
-            const minLat = Math.min(...lats)
-            const maxLat = Math.max(...lats)
-            const pad = 50
+            // Camera: center on arc midpoint. fitBounds breaks for
+            // antimeridian-crossing routes (lat/lon span ±180 → world bbox).
+            // turf returns a MultiLineString when the arc splits at ±180, so
+            // coords may be [[...pairs...], [...pairs...]] rather than [...pairs].
+            // Flatten to a single list of [lon, lat] pairs before picking the mid.
+            type Coord = [number, number]
+            const raw = arc.geometry.coordinates as Coord[] | Coord[][]
+            const isMulti = Array.isArray(raw[0][0])
+            const flatCoords: Coord[] = isMulti
+              ? (raw as Coord[][]).flat()
+              : (raw as Coord[])
+            // For MultiLineString (antimeridian split), use the longer segment's
+            // midpoint so the camera lands over the main arc, not the seam.
+            let mid: Coord
+            if (isMulti) {
+              const segs = raw as Coord[][]
+              const longest = segs.reduce((a, b) => a.length >= b.length ? a : b)
+              mid = longest[Math.floor(longest.length / 2)]
+            } else {
+              mid = flatCoords[Math.floor(flatCoords.length / 2)]
+            }
+            const lats = flatCoords.map(c => c[1])
+            const latSpan = Math.max(...lats) - Math.min(...lats)
+            // Globe projection in a 45vh hero: zoom out aggressively so the arc
+            // fits. Short domestic routes need ~2.5, long-haul ~1.0.
+            const zoom = latSpan > 35 ? 0.8 : latSpan > 20 ? 1.5 : 2.5
             try {
-              map.fitBounds(
-                [[minLon, minLat], [maxLon, maxLat]],
-                { padding: pad, duration: 1200, maxZoom: 6 }
-              )
+              map.easeTo({ center: [mid[0], mid[1]], zoom, duration: 1200 })
             } catch {
               // ignore
             }
           } catch {
-            // turf not available or arc failed — skip
+            // arc computation failed — skip
           }
         })()
 
