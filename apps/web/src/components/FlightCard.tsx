@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import type { Flight } from '../lib/api'
 import { StatusBadge } from './StatusBadge'
 import { formatTime, formatDate } from '../lib/format'
+import { useCountdown } from '../hooks/useCountdown'
 
 interface Props {
   flight: Flight
@@ -30,6 +31,46 @@ function flightProgress(flight: Flight): number | null {
   return Math.max(0, Math.min(100, ((now - dep) / (arr - dep)) * 100))
 }
 
+function countdownColor(flight: Flight): string {
+  const st = flight.status.toLowerCase().replace(/[\s_]+/g, '-')
+  if (st === 'cancelled' || st === 'arrived' || st === 'landed') return 'var(--muted-status)'
+  const depTime = new Date(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled).getTime()
+  const diff = depTime - Date.now()
+  const hasDeparted = !!flight.departureActual || st === 'en-route' || st === 'departed'
+  if (!hasDeparted && diff < 30 * 60 * 1000) return 'var(--delayed)'
+  return 'var(--accent)'
+}
+
+function countdownBg(flight: Flight): string {
+  const st = flight.status.toLowerCase().replace(/[\s_]+/g, '-')
+  if (st === 'cancelled' || st === 'arrived' || st === 'landed') return 'rgba(148,163,184,0.12)'
+  const depTime = new Date(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled).getTime()
+  const diff = depTime - Date.now()
+  const hasDeparted = !!flight.departureActual || st === 'en-route' || st === 'departed'
+  if (!hasDeparted && diff < 30 * 60 * 1000) return 'rgba(251,191,36,0.12)'
+  return 'rgba(77,168,255,0.12)'
+}
+
+function CountdownChip({ flight }: { flight: Flight }): React.ReactElement {
+  const text = useCountdown(flight)
+  return (
+    <span style={{
+      fontSize: '0.68rem',
+      fontWeight: 600,
+      padding: '0.15rem 0.55rem',
+      borderRadius: 99,
+      background: countdownBg(flight),
+      color: countdownColor(flight),
+      letterSpacing: '0.03em',
+      fontVariantNumeric: 'tabular-nums',
+      whiteSpace: 'nowrap',
+      flexShrink: 0,
+    }}>
+      {text}
+    </span>
+  )
+}
+
 export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactElement {
   const depTime = flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled
   const arrTime = flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled
@@ -44,24 +85,41 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
     >
       <Link to={`/flights/${flight.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
         <div className="card card-hover flight-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          {/* Top row: route + countdown */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
             <div className="flight-route">
               <span>{flight.origin}</span>
               <PlaneGlyph />
               <span>{flight.destination}</span>
             </div>
-            <StatusBadge status={flight.status} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem', flexShrink: 0 }}>
+              <StatusBadge status={flight.status} />
+              <CountdownChip flight={flight} />
+            </div>
           </div>
 
-          <div className="flight-meta">
-            <span style={{ fontWeight: 600, color: 'var(--text-dim)' }}>{flight.ident}</span>
-            {showDate && <span>{formatDate(flight.departureScheduled)}</span>}
-            <span className="flight-meta-times">
-              {formatTime(depTime)} → {formatTime(arrTime)}
-            </span>
-            {flight.gateDeparture && <span>Gate {flight.gateDeparture}</span>}
-            {flight.terminalDeparture && <span>T{flight.terminalDeparture}</span>}
-            {flight.aircraftType && <span>{flight.aircraftType}</span>}
+          {/* Meta row */}
+          <div className="flight-meta-row">
+            <span className="flight-meta-ident">{flight.ident}</span>
+            {showDate && (
+              <span className="flight-meta-chip">{formatDate(flight.departureScheduled)}</span>
+            )}
+            <span className="flight-meta-times">{formatTime(depTime)} → {formatTime(arrTime)}</span>
+            {flight.gateDeparture && (
+              <span className="flight-meta-chip">
+                <span className="flight-meta-chip-label">Gate</span>
+                {flight.gateDeparture}
+              </span>
+            )}
+            {flight.terminalDeparture && (
+              <span className="flight-meta-chip">
+                <span className="flight-meta-chip-label">T</span>
+                {flight.terminalDeparture}
+              </span>
+            )}
+            {flight.aircraftType && (
+              <span className="flight-meta-chip flight-meta-chip-dim">{flight.aircraftType}</span>
+            )}
           </div>
 
           {progress !== null && (

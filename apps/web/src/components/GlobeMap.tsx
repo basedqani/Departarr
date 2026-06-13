@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import greatCircle from '@turf/great-circle'
 import { point } from '@turf/helpers'
 import type { AircraftPosition } from '../lib/api'
@@ -20,6 +20,15 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('maplibre-gl').Map | null>(null)
   const markerRef = useRef<import('maplibre-gl').Marker | null>(null)
+  // Store easeTo params so the recenter button can re-run them
+  const easeToCenterRef = useRef<{ center: [number, number]; zoom: number } | null>(null)
+
+  const handleRecenter = useCallback(() => {
+    const map = mapRef.current
+    const params = easeToCenterRef.current
+    if (!map || !params) return
+    map.easeTo({ center: params.center, zoom: params.zoom, duration: 900 })
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -45,7 +54,12 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
         center: [0, 20],
         zoom: 1.5,
         attributionControl: false,
-        interactive: false,
+        interactive: true,
+        dragPan: true,
+        scrollZoom: true,
+        dragRotate: true,
+        touchZoomRotate: true,
+        keyboard: true,
         pitchWithRotate: false,
       })
 
@@ -177,6 +191,8 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
             // Globe projection in a 45vh hero: zoom out aggressively so the arc
             // fits. Short domestic routes need ~2.5, long-haul ~1.0.
             const zoom = latSpan > 35 ? 0.8 : latSpan > 20 ? 1.5 : 2.5
+            // Store for recenter button
+            easeToCenterRef.current = { center: [mid[0], mid[1]], zoom }
             try {
               map.easeTo({ center: [mid[0], mid[1]], zoom, duration: 1200 })
             } catch {
@@ -237,14 +253,51 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
   }, [position, origin, destination, departureScheduled, arrivalScheduled, status])
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        width: '100%',
-        height: '100%',
-        background: '#05080f',
-      }}
-    />
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div
+        ref={containerRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          background: '#05080f',
+        }}
+      />
+      {/* Recenter button */}
+      <button
+        onClick={handleRecenter}
+        aria-label="Re-center map"
+        style={{
+          position: 'absolute',
+          bottom: '0.75rem',
+          right: '0.75rem',
+          zIndex: 10,
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          background: 'rgba(13,19,32,0.72)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          padding: 0,
+          color: 'rgba(232,237,245,0.8)',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          transition: 'background 0.15s',
+        }}
+      >
+        {/* Lucide Locate icon */}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="2" y1="12" x2="5" y2="12" />
+          <line x1="19" y1="12" x2="22" y2="12" />
+          <line x1="12" y1="2" x2="12" y2="5" />
+          <line x1="12" y1="19" x2="12" y2="22" />
+          <circle cx="12" cy="12" r="4" />
+        </svg>
+      </button>
+    </div>
   )
 }
 

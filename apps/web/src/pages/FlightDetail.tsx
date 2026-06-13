@@ -1,27 +1,48 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { lazy, Suspense, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatTime, formatDateTime } from '../lib/format'
+import { formatTime, formatDateTime, formatDuration, formatLocalTime, formatTzShift } from '../lib/format'
 import type { AircraftPosition, FlightWithEvents } from '../lib/api'
 import { getAirport } from '../lib/airports'
+import { useCountdown } from '../hooks/useCountdown'
 
 const GlobeMap = lazy(() => import('../components/GlobeMap').then(m => ({ default: m.GlobeMap })))
 
-const STATUS_STEPS = [
-  { key: 'scheduled',  label: 'Scheduled' },
-  { key: 'boarding',   label: 'Boarding' },
-  { key: 'departed',   label: 'Departed' },
-  { key: 'en-route',   label: 'En Route' },
-  { key: 'landed',     label: 'Landed' },
-  { key: 'arrived',    label: 'Arrived' },
+// OOOI timeline step definitions
+interface OooiStep {
+  key: string
+  label: string
+  timeField: keyof FlightWithEvents | null
+  description?: string
+}
+
+const OOOI_STEPS: OooiStep[] = [
+  { key: 'scheduled',   label: 'Scheduled',    timeField: null },
+  { key: 'boarding',    label: 'Boarding',      timeField: null },
+  { key: 'off-gate',    label: 'Departed gate', timeField: 'departureActual' },
+  { key: 'airborne',    label: 'Took off',      timeField: 'takeoffActual' },
+  { key: 'en-route',    label: 'En route',      timeField: null },
+  { key: 'touched-down',label: 'Landed',        timeField: 'landingActual' },
+  { key: 'at-gate',     label: 'At gate',       timeField: 'arrivalActual' },
 ]
 
-function getStepIndex(status: string): number {
-  const idx = STATUS_STEPS.findIndex(s => s.key === status.toLowerCase().replace(/[\s_]+/g, '-'))
-  return idx === -1 ? 0 : idx
+function getOooiStepIndex(status: string, flight: FlightWithEvents): number {
+  const st = status.toLowerCase().replace(/[\s_]+/g, '-')
+  if (st === 'arrived' || st === 'landed') {
+    if (flight.arrivalActual) return 6
+    if (flight.landingActual) return 5
+    return 5
+  }
+  if (st === 'en-route') return 4
+  if (st === 'departed') {
+    if (flight.takeoffActual) return 4
+    return 2
+  }
+  if (st === 'boarding') return 1
+  return 0
 }
 
 function flightProgressPct(flight: FlightWithEvents): number {
@@ -30,6 +51,8 @@ function flightProgressPct(flight: FlightWithEvents): number {
   if (dep >= arr) return 0
   return Math.max(0, Math.min(100, ((Date.now() - dep) / (arr - dep)) * 100))
 }
+
+// ─── Sub-components ─────────────────────────────────────────────────────────
 
 interface ProgressBarProps {
   flight: FlightWithEvents
@@ -77,21 +100,311 @@ function TimeColumn({ iata, label, scheduled, estimated, actual, align }: TimeCo
   const best = actual ?? estimated ?? scheduled
   const hasChange = (estimated ?? actual) && (estimated ?? actual) !== scheduled
   const airport = getAirport(iata)
+  const tz = airport?.tz
+  const localTime = formatLocalTime(best, tz)
+  const scheduledLocal = formatLocalTime(scheduled, tz)
 
   return (
     <div className={`time-col${align === 'right' ? ' right' : ''}`}>
       <div className="time-city">{airport?.city ?? iata}</div>
       <div className="time-iata">{iata}</div>
-      <div className="time-main">{formatTime(best)}</div>
+      <div className="time-main">{localTime}</div>
       {hasChange && (
-        <div className="time-sched">{formatTime(scheduled)}</div>
+        <div className="time-sched">{scheduledLocal}</div>
       )}
       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
         {label}
+        {tz && (
+          <span style={{ marginLeft: '0.3rem', opacity: 0.7 }}>
+            {new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' })
+              .formatToParts(new Date(best))
+              .find(p => p.type === 'timeZoneName')?.value ?? ''}
+          </span>
+        )}
       </div>
     </div>
   )
 }
+
+// ─── Info cell icons ─────────────────────────────────────────────────────────
+
+function IconDoorOpen(): React.ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13 4H3v16h10"/><path d="M13 4v16"/><path d="M21 4l-8 8 8 8"/><circle cx="16" cy="12" r="1" fill="currentColor"/>
+    </svg>
+  )
+}
+
+function IconBuilding2(): React.ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>
+    </svg>
+  )
+}
+
+function IconLuggage(): React.ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 20a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2Z"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
+    </svg>
+  )
+}
+
+function IconPlane(): React.ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21 4 19 4c-2 0-4 0-5.5 1.5L10 9 1.8 6.2c-.5-.2-1 .1-1.1.6l-.2.8c-.1.5.2 1 .7 1.2L9 11l-3 5-4-1-.5.5 3 3 3-3 .5 3.5 8-3c.5.1 1-.2 1.2-.7l.1-.3c.1-.5-.2-1-.5-1.8z"/>
+    </svg>
+  )
+}
+
+function IconHash(): React.ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>
+    </svg>
+  )
+}
+
+function IconClock(): React.ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
+  )
+}
+
+function IconArmchair(): React.ReactElement {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3"/><path d="M3 11v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v2H7v-2a2 2 0 0 0-4 0Z"/><path d="M5 18v2"/><path d="M19 18v2"/>
+    </svg>
+  )
+}
+
+function IconTicket(): React.ReactElement {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>
+    </svg>
+  )
+}
+
+// ─── Editable booking card ────────────────────────────────────────────────────
+
+interface BookingCardProps {
+  flightId: string
+  seat: string | null
+  confirmationCode: string | null
+}
+
+function BookingCard({ flightId, seat, confirmationCode }: BookingCardProps): React.ReactElement {
+  const queryClient = useQueryClient()
+  const [editSeat, setEditSeat] = useState(false)
+  const [editConf, setEditConf] = useState(false)
+  const [seatVal, setSeatVal] = useState(seat ?? '')
+  const [confVal, setConfVal] = useState(confirmationCode ?? '')
+
+  const mutation = useMutation({
+    mutationFn: (data: { seat?: string | null; confirmationCode?: string | null }) =>
+      api.flights.patch(flightId, data),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['flight', flightId] })
+    },
+  })
+
+  async function saveSeat(): Promise<void> {
+    await mutation.mutateAsync({ seat: seatVal.trim() || null })
+    setEditSeat(false)
+  }
+
+  async function saveConf(): Promise<void> {
+    await mutation.mutateAsync({ confirmationCode: confVal.trim() || null })
+    setEditConf(false)
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: '0.875rem' }}>
+      <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '0.875rem' }}>
+        Your Trip
+      </div>
+
+      {/* Seat */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)' }}>
+          <IconArmchair />
+          <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text)' }}>Seat</span>
+        </div>
+        {editSeat ? (
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+            <input
+              value={seatVal}
+              onChange={e => setSeatVal(e.target.value)}
+              placeholder="e.g. 14A"
+              autoFocus
+              style={{ width: 90, padding: '0.3rem 0.5rem', fontSize: '0.85rem' }}
+              onKeyDown={e => { if (e.key === 'Enter') void saveSeat() }}
+            />
+            <button
+              style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}
+              onClick={() => void saveSeat()}
+              disabled={mutation.isPending}
+            >
+              Save
+            </button>
+            <button className="secondary" style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }} onClick={() => { setEditSeat(false); setSeatVal(seat ?? '') }}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            className="secondary"
+            style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', fontVariantNumeric: 'tabular-nums' }}
+            onClick={() => setEditSeat(true)}
+          >
+            {seat ? seat : <span style={{ color: 'var(--accent)', fontWeight: 500 }}>+ Add seat</span>}
+          </button>
+        )}
+      </div>
+
+      {/* Confirmation code */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)' }}>
+          <IconTicket />
+          <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text)' }}>Confirmation</span>
+        </div>
+        {editConf ? (
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+            <input
+              value={confVal}
+              onChange={e => setConfVal(e.target.value)}
+              placeholder="e.g. ABC123"
+              autoFocus
+              style={{ width: 110, padding: '0.3rem 0.5rem', fontSize: '0.85rem' }}
+              onKeyDown={e => { if (e.key === 'Enter') void saveConf() }}
+            />
+            <button
+              style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}
+              onClick={() => void saveConf()}
+              disabled={mutation.isPending}
+            >
+              Save
+            </button>
+            <button className="secondary" style={{ padding: '0.3rem 0.65rem', fontSize: '0.78rem' }} onClick={() => { setEditConf(false); setConfVal(confirmationCode ?? '') }}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            className="secondary"
+            style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', fontFamily: 'monospace', letterSpacing: '0.06em' }}
+            onClick={() => setEditConf(true)}
+          >
+            {confirmationCode ? confirmationCode : <span style={{ color: 'var(--accent)', fontWeight: 500, fontFamily: 'inherit', letterSpacing: 'normal' }}>+ Add confirmation</span>}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Aircraft photo card ──────────────────────────────────────────────────────
+
+function AircraftPhotoCard({ flightId }: { flightId: string }): React.ReactElement | null {
+  const { data: photo } = useQuery({
+    queryKey: ['flight-photo', flightId],
+    queryFn: () => api.flights.getPhoto(flightId),
+    staleTime: 10 * 60 * 1000,
+  })
+
+  if (!photo) return null
+
+  return (
+    <div className="card" style={{ marginBottom: '0.875rem', padding: 0, overflow: 'hidden' }}>
+      <img
+        src={photo.url}
+        alt="Aircraft photo"
+        style={{ width: '100%', display: 'block', borderRadius: '16px 16px 0 0', maxHeight: 220, objectFit: 'cover' }}
+        loading="lazy"
+      />
+      <div style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span>
+          &copy; {photo.photographer} · <a href={photo.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>planespotters.net</a>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ─── OOOI Timeline ────────────────────────────────────────────────────────────
+
+function OooiTimeline({ flight }: { flight: FlightWithEvents }): React.ReactElement {
+  const currentIdx = getOooiStepIndex(flight.status, flight)
+
+  return (
+    <div className="card" style={{ marginBottom: '0.875rem' }}>
+      <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+        Status
+      </div>
+      <div className="event-timeline">
+        {OOOI_STEPS.map((step, i) => {
+          const done = i < currentIdx
+          const active = i === currentIdx
+          const timeStr = step.timeField
+            ? formatTime(flight[step.timeField] as string | null)
+            : null
+          const showTime = done && timeStr && timeStr !== '--:--'
+
+          return (
+            <div key={step.key} className="event-item">
+              <div className={`event-dot${done ? ' done' : active ? ' active' : ''}`} />
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', justifyContent: 'space-between' }}>
+                <div
+                  className="event-label"
+                  style={{
+                    color: done
+                      ? 'var(--on-time)'
+                      : active
+                        ? 'var(--accent)'
+                        : 'var(--text-muted)',
+                    fontWeight: active ? 700 : done ? 600 : 500,
+                  }}
+                >
+                  {step.label}
+                </div>
+                {showTime && (
+                  <div className="event-time" style={{ color: 'var(--on-time)' }}>
+                    {timeStr}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+        {flight.baggageClaim && (
+          <div className="event-item">
+            <div className="event-dot done" />
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', justifyContent: 'space-between' }}>
+              <div className="event-label" style={{ color: 'var(--on-time)', fontWeight: 600 }}>
+                Baggage claim
+              </div>
+              <div className="event-time" style={{ color: 'var(--on-time)' }}>
+                {flight.baggageClaim}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export function FlightDetailPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
@@ -129,9 +442,29 @@ export function FlightDetailPage(): React.ReactElement {
   )
   if (!flight) return <div className="error-box">Flight not found</div>
 
-  const stepIdx = getStepIndex(flight.status)
   const st = flight.status.toLowerCase().replace(/[\s_]+/g, '-')
   const isLive = st === 'en-route' || st === 'departed'
+
+  // Countdown text from hook
+  const countdown = useCountdown(flight)
+
+  // Flight duration
+  const durationMs = (() => {
+    if (flight.landingActual && flight.takeoffActual) {
+      return new Date(flight.landingActual).getTime() - new Date(flight.takeoffActual).getTime()
+    }
+    return new Date(flight.arrivalScheduled).getTime() - new Date(flight.departureScheduled).getTime()
+  })()
+
+  // Timezone shift badge
+  const originAirport = getAirport(flight.origin)
+  const destAirport = getAirport(flight.destination)
+  const tzShift = formatTzShift(
+    originAirport?.tz,
+    destAirport?.tz,
+    flight.departureScheduled,
+    destAirport?.city ?? flight.destination,
+  )
 
   async function handleDelete(): Promise<void> {
     if (!confirm('Delete this flight?')) return
@@ -252,6 +585,40 @@ export function FlightDetailPage(): React.ReactElement {
           </div>
         </div>
 
+        {/* Prominent live countdown */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{
+            fontSize: '1.55rem',
+            fontWeight: 800,
+            fontVariantNumeric: 'tabular-nums',
+            letterSpacing: '-0.02em',
+            color: st === 'cancelled' ? 'var(--cancelled)' : st === 'arrived' || st === 'landed' ? 'var(--on-time)' : 'var(--accent)',
+            lineHeight: 1.15,
+          }}>
+            {countdown}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginTop: '0.3rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <IconClock />
+              Flight time {formatDuration(durationMs)}
+            </span>
+            {tzShift && (
+              <span style={{
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                background: 'rgba(77,168,255,0.1)',
+                border: '1px solid rgba(77,168,255,0.2)',
+                borderRadius: 99,
+                padding: '0.18rem 0.55rem',
+                color: 'var(--accent)',
+                letterSpacing: '0.02em',
+              }}>
+                {tzShift}
+              </span>
+            )}
+          </div>
+        </div>
+
         {shareUrl && (
           <div className="card" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem' }}>
             <span style={{ flex: 1, fontSize: '0.82rem', wordBreak: 'break-all', color: 'var(--text-muted)' }}>{shareUrl}</span>
@@ -260,6 +627,11 @@ export function FlightDetailPage(): React.ReactElement {
             </button>
           </div>
         )}
+
+        {/* Aircraft photo (async, non-blocking) */}
+        <Suspense fallback={null}>
+          <AircraftPhotoCard flightId={id!} />
+        </Suspense>
 
         {/* Time columns + progress */}
         <div className="card" style={{ marginBottom: '0.875rem' }}>
@@ -291,69 +663,80 @@ export function FlightDetailPage(): React.ReactElement {
           <FlightProgressBar flight={flight} />
         </div>
 
-        {/* Status steps */}
-        <div className="card" style={{ marginBottom: '0.875rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-            Status
-          </div>
-          <div className="event-timeline">
-            {STATUS_STEPS.map((step, i) => {
-              const done = i < stepIdx
-              const active = i === stepIdx
-              return (
-                <div key={step.key} className="event-item">
-                  <div className={`event-dot${done ? ' done' : active ? ' active' : ''}`} />
-                  <div className="event-label">{step.label}</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        {/* OOOI Status timeline */}
+        <OooiTimeline flight={flight} />
+
+        {/* Booking card */}
+        <BookingCard
+          flightId={id!}
+          seat={flight.seat}
+          confirmationCode={flight.confirmationCode}
+        />
 
         {/* Info grid */}
         <div className="info-grid">
           {flight.gateDeparture && (
             <div className="info-cell">
-              <div className="info-cell-label">Dep Gate</div>
+              <div className="info-cell-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <IconDoorOpen /> Dep Gate
+              </div>
               <div className="info-cell-value">{flight.gateDeparture}</div>
             </div>
           )}
           {flight.gateArrival && (
             <div className="info-cell">
-              <div className="info-cell-label">Arr Gate</div>
+              <div className="info-cell-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <IconDoorOpen /> Arr Gate
+              </div>
               <div className="info-cell-value">{flight.gateArrival}</div>
             </div>
           )}
           {flight.terminalDeparture && (
             <div className="info-cell">
-              <div className="info-cell-label">Dep Terminal</div>
+              <div className="info-cell-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <IconBuilding2 /> Dep Terminal
+              </div>
               <div className="info-cell-value">{flight.terminalDeparture}</div>
             </div>
           )}
           {flight.terminalArrival && (
             <div className="info-cell">
-              <div className="info-cell-label">Arr Terminal</div>
+              <div className="info-cell-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <IconBuilding2 /> Arr Terminal
+              </div>
               <div className="info-cell-value">{flight.terminalArrival}</div>
             </div>
           )}
           {flight.baggageClaim && (
             <div className="info-cell">
-              <div className="info-cell-label">Baggage</div>
+              <div className="info-cell-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <IconLuggage /> Baggage
+              </div>
               <div className="info-cell-value">{flight.baggageClaim}</div>
             </div>
           )}
           {flight.aircraftType && (
             <div className="info-cell">
-              <div className="info-cell-label">Aircraft</div>
+              <div className="info-cell-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <IconPlane /> Aircraft
+              </div>
               <div className="info-cell-value">{flight.aircraftType}</div>
             </div>
           )}
           {flight.registration && (
             <div className="info-cell">
-              <div className="info-cell-label">Registration</div>
-              <div className="info-cell-value">{flight.registration}</div>
+              <div className="info-cell-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <IconHash /> Registration
+              </div>
+              <div className="info-cell-value" style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{flight.registration}</div>
             </div>
           )}
+          <div className="info-cell">
+            <div className="info-cell-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <IconClock /> Duration
+            </div>
+            <div className="info-cell-value">{formatDuration(durationMs)}</div>
+          </div>
         </div>
 
         {/* Event history */}

@@ -332,6 +332,56 @@ input:focus, select:focus, textarea:focus {
   color: var(--text-dim);
 }
 
+/* Improved meta row with separated chips */
+.flight-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.flight-meta-ident {
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+  margin-right: 0.15rem;
+}
+
+.flight-meta-times {
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.flight-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xs);
+  padding: 0.1rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.flight-meta-chip-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.flight-meta-chip-dim {
+  opacity: 0.7;
+}
+
 /* Mini progress bar on in-flight cards */
 .flight-progress {
   height: 3px;

@@ -106,7 +106,7 @@ function SettingRow({ label, hint, hintLink, hintLinkText, currentValue, onSave 
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             placeholder={`Enter ${label.toLowerCase()}…`}
-            style={{ flex: 1, fontSize: '0.85rem', padding: '0.4rem 0.6rem', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '0.5rem', color: 'var(--text-primary)' }}
+            style={{ flex: 1, fontSize: '0.85rem', padding: '0.4rem 0.6rem', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: '0.5rem', color: 'var(--text)' }}
             onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
             autoFocus
           />
@@ -123,6 +123,67 @@ function SettingRow({ label, hint, hintLink, hintLinkText, currentValue, onSave 
   )
 }
 
+interface ToggleRowProps {
+  label: string
+  hint: string
+  checked: boolean
+  onChange: (val: boolean) => Promise<void>
+}
+
+function ToggleRow({ label, hint, checked, onChange }: ToggleRowProps): React.ReactElement {
+  const [saving, setSaving] = useState(false)
+
+  async function handleChange(): Promise<void> {
+    setSaving(true)
+    try {
+      await onChange(!checked)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="settings-row">
+      <div>
+        <div className="settings-row-label">{label}</div>
+        <div className="settings-row-sub">{hint}</div>
+      </div>
+      <button
+        role="switch"
+        aria-checked={checked}
+        onClick={() => void handleChange()}
+        disabled={saving}
+        style={{
+          padding: '0',
+          width: 44,
+          height: 26,
+          borderRadius: 99,
+          background: checked ? 'var(--accent)' : 'var(--surface-raised)',
+          border: `1px solid ${checked ? 'transparent' : 'var(--hairline)'}`,
+          position: 'relative',
+          flexShrink: 0,
+          transition: 'background 0.2s',
+        }}
+      >
+        <span style={{
+          position: 'absolute',
+          top: 3,
+          left: checked ? 20 : 3,
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          background: '#fff',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+          transition: 'left 0.2s',
+          display: 'block',
+        }} />
+      </button>
+    </div>
+  )
+}
+
 export function SettingsPage(): React.ReactElement {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -132,9 +193,13 @@ export function SettingsPage(): React.ReactElement {
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
   const { data: user } = useQuery({ queryKey: ['me'], queryFn: api.auth.me })
+
+  // Only fetch settings if admin
   const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ['settings'],
     queryFn: api.settings.get,
+    enabled: user?.isAdmin === true,
+    retry: false,
   })
 
   function handleLogout(): void {
@@ -174,6 +239,13 @@ export function SettingsPage(): React.ReactElement {
     await refetchSettings()
   }
 
+  async function toggleAllowRegistration(val: boolean): Promise<void> {
+    await api.settings.set('allow_registration', val ? 'true' : 'false')
+    await refetchSettings()
+  }
+
+  const allowRegistration = settings?.allow_registration === 'true'
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -193,6 +265,21 @@ export function SettingsPage(): React.ReactElement {
               <div className="settings-row-label">{user.name}</div>
               <div className="settings-row-sub">{user.email}</div>
             </div>
+            {user.isAdmin && (
+              <span style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                background: 'rgba(77,168,255,0.15)',
+                color: 'var(--accent)',
+                borderRadius: 99,
+                padding: '0.2rem 0.6rem',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                flexShrink: 0,
+              }}>
+                Admin
+              </span>
+            )}
           </div>
         )}
         <div className="settings-row" style={{ cursor: 'pointer' }} onClick={handleLogout}>
@@ -201,38 +288,52 @@ export function SettingsPage(): React.ReactElement {
         </div>
       </div>
 
-      {/* Data Sources */}
-      <div className="settings-section">
-        <div className="settings-section-title">Data Sources</div>
-        <SettingRow
-          label="FlightAware API Key"
-          hint="Real-time flight data"
-          hintLink="https://www.flightaware.com/commercial/aeroapi"
-          hintLinkText="Get a key at flightaware.com"
-          currentValue={(settings?.flightaware_api_key as string | null) ?? null}
-          onSave={v => saveSetting('flightaware_api_key', v)}
-        />
-        <SettingRow
-          label="Google Client ID"
-          hint="Required for Google Calendar import"
-          hintLink="https://console.cloud.google.com"
-          hintLinkText="console.cloud.google.com"
-          currentValue={(settings?.google_client_id as string | null) ?? null}
-          onSave={v => saveSetting('google_client_id', v)}
-        />
-        <SettingRow
-          label="Google Client Secret"
-          hint="Required for Google Calendar import"
-          currentValue={(settings?.google_client_secret as string | null) ?? null}
-          onSave={v => saveSetting('google_client_secret', v)}
-        />
-        <SettingRow
-          label="Contact Email"
-          hint="Used as VAPID subject for push notifications (e.g. mailto:you@example.com)"
-          currentValue={(settings?.vapid_subject as string | null) ?? null}
-          onSave={v => saveSetting('vapid_subject', v)}
-        />
-      </div>
+      {/* Admin-only: Data Sources + Admin controls */}
+      {user?.isAdmin && (
+        <>
+          <div className="settings-section">
+            <div className="settings-section-title">Data Sources</div>
+            <SettingRow
+              label="FlightAware API Key"
+              hint="Real-time flight data"
+              hintLink="https://www.flightaware.com/commercial/aeroapi"
+              hintLinkText="Get a key at flightaware.com"
+              currentValue={(settings?.flightaware_api_key as string | null) ?? null}
+              onSave={v => saveSetting('flightaware_api_key', v)}
+            />
+            <SettingRow
+              label="Google Client ID"
+              hint="Required for Google Calendar import"
+              hintLink="https://console.cloud.google.com"
+              hintLinkText="console.cloud.google.com"
+              currentValue={(settings?.google_client_id as string | null) ?? null}
+              onSave={v => saveSetting('google_client_id', v)}
+            />
+            <SettingRow
+              label="Google Client Secret"
+              hint="Required for Google Calendar import"
+              currentValue={(settings?.google_client_secret as string | null) ?? null}
+              onSave={v => saveSetting('google_client_secret', v)}
+            />
+            <SettingRow
+              label="Contact Email"
+              hint="Used as VAPID subject for push notifications (e.g. mailto:you@example.com)"
+              currentValue={(settings?.vapid_subject as string | null) ?? null}
+              onSave={v => saveSetting('vapid_subject', v)}
+            />
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Admin</div>
+            <ToggleRow
+              label="Allow new registrations"
+              hint="When off, the registration page is disabled."
+              checked={allowRegistration}
+              onChange={toggleAllowRegistration}
+            />
+          </div>
+        </>
+      )}
 
       {/* Notifications */}
       <div className="settings-section">
