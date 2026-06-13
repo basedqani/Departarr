@@ -11,6 +11,20 @@ const addFlightSchema = z.object({
   tripId: z.string().optional(),
 })
 
+const patchFlightSchema = z.object({
+  seat: z.string().optional(),
+  confirmationCode: z.string().optional(),
+  tripId: z.string().nullable().optional(),
+})
+
+// In-memory photo cache: registration -> { data, expires }
+interface PhotoCacheEntry {
+  data: { url: string; link: string; photographer: string } | null
+  expires: number
+}
+const photoCache = new Map<string, PhotoCacheEntry>()
+const PHOTO_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
 export async function flightRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware)
 
@@ -70,6 +84,12 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
         arrivalScheduled: flightData.arrivalScheduled,
         arrivalEstimated: flightData.arrivalEstimated ?? null,
         arrivalActual: flightData.arrivalActual ?? null,
+        takeoffScheduled: flightData.takeoffScheduled ?? null,
+        takeoffEstimated: flightData.takeoffEstimated ?? null,
+        takeoffActual: flightData.takeoffActual ?? null,
+        landingScheduled: flightData.landingScheduled ?? null,
+        landingEstimated: flightData.landingEstimated ?? null,
+        landingActual: flightData.landingActual ?? null,
         status: flightData.status,
         gateDeparture: flightData.gateDeparture ?? null,
         gateArrival: flightData.gateArrival ?? null,
@@ -126,5 +146,94 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     if (!position) return reply.code(404).send({ error: 'Position not available' })
 
     return reply.send(position)
+  })
+
+  // PATCH /api/flights/:id — update user-editable fields
+  app.patch('/flights/:id', async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const { id } = req.params as { id: string }
+
+    const body = patchFlightSchema.safeParse(req.body)
+    if (!body.success) return reply.code(400).send({ error: body.error.flatten() })
+
+    const flight = await prisma.flight.findFirst({ where: { id, userId } })
+    if (!flight) return reply.code(404).send({ error: 'Flight not found' })
+
+    const updated = await prisma.flight.update({
+      where: { id },
+      data: {
+        ...(body.data.seat !== undefined && { seat: body.data.seat }),
+        ...(body.data.confirmationCode !== undefined && { confirmationCode: body.data.confirmationCode }),
+        ...(body.data.tripId !== undefined && { tripId: body.data.tripId }),
+      },
+    })
+    return reply.send(updated)
+  })
+
+  // GET /api/flights/:id/photo — planespotters aircraft photo proxy
+  app.get('/flights/:id/photo', async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const { id } = req.params as { id: string }
+
+    const flight = await prisma.flight.findFirst({ where: { id, userId } })
+    if (!flight) return reply.code(404).send({ error: 'Flight not found' })
+
+    if (!flight.registration) {
+      return reply.code(204).send()
+    }
+
+    const reg = flight.registration
+    const now = Date.now()
+
+    // Check cache
+    const cached = photoCache.get(reg)
+    if (cached && cached.expires > now) {
+      if (cached.data === null) return reply.code(204).send()
+      return reply.send(cached.data)
+    }
+
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 5000)
+      const url = `https://api.planespotters.net/pub/photos/reg/${encodeURIComponent(reg)}`
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Departarr/1.0 (+https://github.com/departarr/departarr)',
+        },
+      })
+      clearTimeout(timer)
+
+      if (!res.ok) {
+        photoCache.set(reg, { data: null, expires: now + PHOTO_TTL_MS })
+        return reply.code(204).send()
+      }
+
+      const json = await res.json() as { photos?: Array<{
+        id: string
+        thumbnail: { src: string; size: { width: number; height: number } }
+        thumbnail_large?: { src: string; size: { width: number; height: number } }
+        link: string
+        photographer: string
+      }> }
+
+      const photos = json.photos ?? []
+      if (photos.length === 0) {
+        photoCache.set(reg, { data: null, expires: now + PHOTO_TTL_MS })
+        return reply.code(204).send()
+      }
+
+      const photo = photos[0]
+      const data = {
+        url: photo.thumbnail_large?.src ?? photo.thumbnail.src,
+        link: photo.link,
+        photographer: photo.photographer,
+      }
+      photoCache.set(reg, { data, expires: now + PHOTO_TTL_MS })
+      return reply.send(data)
+    } catch {
+      // Network error or timeout — return null gracefully, do not cache
+      return reply.code(204).send()
+    }
   })
 }

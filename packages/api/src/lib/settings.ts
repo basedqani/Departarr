@@ -5,6 +5,7 @@ export const RECOGNIZED_KEYS = [
   'google_client_id',
   'google_client_secret',
   'vapid_subject',
+  'allow_registration',
 ] as const
 
 export type SettingKey = (typeof RECOGNIZED_KEYS)[number]

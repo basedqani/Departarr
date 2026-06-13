@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { getSetting, setSetting, RECOGNIZED_KEYS, type SettingKey } from '../lib/settings.js'
-import { authMiddleware } from '../middleware/auth.js'
+import { authMiddleware, adminMiddleware } from '../middleware/auth.js'
 
 /** Show the last 4 chars of a secret, masking the rest with asterisks. */
 function maskSecret(value: string): string {
@@ -13,8 +13,10 @@ const SECRET_KEYS: SettingKey[] = ['flightaware_api_key', 'google_client_secret'
 const BOOL_KEYS: SettingKey[] = [] // keys where only presence matters (none currently)
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
-  // GET /api/settings
-  app.get('/settings', { preHandler: authMiddleware }, async (_req, reply) => {
+  const adminGuard = [authMiddleware, adminMiddleware]
+
+  // GET /api/settings — admin only
+  app.get('/settings', { preHandler: adminGuard }, async (_req, reply) => {
     const result: Record<string, string | boolean | null> = {}
 
     for (const key of RECOGNIZED_KEYS) {
@@ -31,13 +33,13 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(result)
   })
 
-  // PUT /api/settings
+  // PUT /api/settings — admin only
   const putSchema = z.object({
     key: z.enum(RECOGNIZED_KEYS as unknown as [string, ...string[]]),
     value: z.string(),
   })
 
-  app.put('/settings', { preHandler: authMiddleware }, async (req, reply) => {
+  app.put('/settings', { preHandler: adminGuard }, async (req, reply) => {
     const body = putSchema.safeParse(req.body)
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() })
 

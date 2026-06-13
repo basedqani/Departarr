@@ -14,6 +14,13 @@ export interface FlightData {
   arrivalScheduled: Date
   arrivalEstimated?: Date
   arrivalActual?: Date
+  // OOOI wheel-off/on times
+  takeoffScheduled?: Date
+  takeoffEstimated?: Date
+  takeoffActual?: Date
+  landingScheduled?: Date
+  landingEstimated?: Date
+  landingActual?: Date
   status: string
   gateDeparture?: string
   gateArrival?: string
@@ -42,12 +49,20 @@ function mapFlight(f: any): FlightData {
     flightNumber: f.flight_number != null ? String(f.flight_number) : undefined,
     origin: f.origin?.code_iata ?? f.origin?.code ?? '',
     destination: f.destination?.code_iata ?? f.destination?.code ?? '',
+    // Gate OUT/IN (departure/arrival times)
     departureScheduled: new Date(f.scheduled_out ?? f.scheduled_off),
     departureEstimated: parseDate(f.estimated_out ?? f.estimated_off),
     departureActual: parseDate(f.actual_out ?? f.actual_off),
     arrivalScheduled: new Date(f.scheduled_in ?? f.scheduled_on),
     arrivalEstimated: parseDate(f.estimated_in ?? f.estimated_on),
     arrivalActual: parseDate(f.actual_in ?? f.actual_on),
+    // OOOI wheel-off/on times
+    takeoffScheduled: parseDate(f.scheduled_off),
+    takeoffEstimated: parseDate(f.estimated_off),
+    takeoffActual: parseDate(f.actual_off),
+    landingScheduled: parseDate(f.scheduled_on),
+    landingEstimated: parseDate(f.estimated_on),
+    landingActual: parseDate(f.actual_on),
     status: (f.status ?? 'scheduled').toLowerCase().replace(/\s+/g, '_'),
     gateDeparture: f.gate_origin ?? undefined,
     gateArrival: f.gate_destination ?? undefined,
@@ -102,6 +117,9 @@ export async function fetchFlightById(faFlightId: string): Promise<FlightData | 
 function stubFlight(ident: string, date: string): FlightData {
   const base = new Date(`${date}T10:00:00Z`)
   const arr = new Date(base.getTime() + 2 * 60 * 60 * 1000)
+  // Wheel-off ~15 min after gate departure, wheel-on ~10 min before gate arrival
+  const takeoff = new Date(base.getTime() + 15 * 60 * 1000)
+  const landing = new Date(arr.getTime() - 10 * 60 * 1000)
   return {
     faFlightId: `STUB-${ident}`,
     airlineIata: ident.slice(0, 2).toUpperCase(),
@@ -110,11 +128,14 @@ function stubFlight(ident: string, date: string): FlightData {
     destination: 'LAX',
     departureScheduled: base,
     arrivalScheduled: arr,
+    takeoffScheduled: takeoff,
+    landingScheduled: landing,
     status: 'scheduled',
     gateDeparture: 'B12',
     gateArrival: 'C4',
     terminalDeparture: 'T2',
     terminalArrival: 'T4',
     aircraftType: 'B738',
+    registration: `N${ident.replace(/\D/g, '').slice(0, 3)}DN`,
   }
 }

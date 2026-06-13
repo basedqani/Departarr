@@ -13,6 +13,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { spawnSync } from 'child_process'
 import { prisma } from './lib/prisma.js'
+import { bootstrapAdmin } from './lib/bootstrap.js'
 import { authRoutes } from './routes/auth.js'
 import { flightRoutes } from './routes/flights.js'
 import { tripRoutes } from './routes/trips.js'
@@ -114,6 +115,7 @@ app.get('/api/health', async () => ({ status: 'ok' }))
 const port = parseInt(process.env.PORT ?? '8080', 10)
 
 try {
+  await bootstrapAdmin()
   await app.listen({ port, host: '0.0.0.0' })
   console.log(`API listening on port ${port}`)
   startPoller()

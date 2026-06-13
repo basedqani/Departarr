@@ -19,6 +19,10 @@ type FlightFields = Pick<
   | 'departureActual'
   | 'arrivalEstimated'
   | 'arrivalActual'
+  | 'takeoffEstimated'
+  | 'takeoffActual'
+  | 'landingEstimated'
+  | 'landingActual'
 >
 
 interface FieldDiff {
@@ -52,6 +56,10 @@ function diffFlights(stored: FlightFields, fresh: FlightData): FieldDiff[] {
   check('arrivalEstimated', 'delay', stored.arrivalEstimated, fresh.arrivalEstimated)
   check('arrivalActual', 'arrival', stored.arrivalActual, fresh.arrivalActual)
   check('baggageClaim', 'baggage', stored.baggageClaim, fresh.baggageClaim)
+  check('takeoffEstimated', 'delay', stored.takeoffEstimated, fresh.takeoffEstimated)
+  check('takeoffActual', 'departure', stored.takeoffActual, fresh.takeoffActual)
+  check('landingEstimated', 'delay', stored.landingEstimated, fresh.landingEstimated)
+  check('landingActual', 'arrival', stored.landingActual, fresh.landingActual)
 
   // Cancellation
   if (fresh.status === 'cancelled' && stored.status !== 'cancelled') {
@@ -95,6 +103,12 @@ async function pollFlight(flight: Flight): Promise<void> {
         departureActual: fresh.departureActual ?? null,
         arrivalEstimated: fresh.arrivalEstimated ?? null,
         arrivalActual: fresh.arrivalActual ?? null,
+        takeoffScheduled: fresh.takeoffScheduled ?? null,
+        takeoffEstimated: fresh.takeoffEstimated ?? null,
+        takeoffActual: fresh.takeoffActual ?? null,
+        landingScheduled: fresh.landingScheduled ?? null,
+        landingEstimated: fresh.landingEstimated ?? null,
+        landingActual: fresh.landingActual ?? null,
         lastPolledAt: new Date(),
       },
     }),

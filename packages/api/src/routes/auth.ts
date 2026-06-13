@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { getSetting } from '../lib/settings.js'
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -19,6 +20,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/register', async (req, reply) => {
     const body = registerSchema.safeParse(req.body)
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() })
+
+    // Registration gate: only bypass for the very first user
+    const userCount = await prisma.user.count()
+    if (userCount > 0) {
+      const allowReg = await getSetting('allow_registration')
+      if (allowReg === 'false') {
+        return reply.code(403).send({ error: 'Registration is disabled' })
+      }
+    }
 
     const existing = await prisma.user.findUnique({ where: { email: body.data.email } })
     if (existing) return reply.code(409).send({ error: 'Email already registered' })
@@ -54,7 +64,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const payload = req.user as { id: string }
     const user = await prisma.user.findUnique({
       where: { id: payload.id },
-      select: { id: true, email: true, name: true, createdAt: true },
+      select: { id: true, email: true, name: true, isAdmin: true, createdAt: true },
     })
     if (!user) return reply.code(404).send({ error: 'User not found' })
     return reply.send(user)

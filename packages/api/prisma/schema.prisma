@@ -12,6 +12,7 @@ model User {
   email               String               @unique
   passwordHash        String
   name                String
+  isAdmin             Boolean              @default(false)
   createdAt           DateTime             @default(now())
   flights             Flight[]
   trips               Trip[]
@@ -57,6 +58,14 @@ model Flight {
   baggageClaim       String?
   aircraftType       String?
   registration       String?
+  takeoffScheduled   DateTime?
+  takeoffEstimated   DateTime?
+  takeoffActual      DateTime?
+  landingScheduled   DateTime?
+  landingEstimated   DateTime?
+  landingActual      DateTime?
+  seat               String?
+  confirmationCode   String?
   lastPolledAt       DateTime?
   createdAt          DateTime      @default(now())
   events             FlightEvent[]
