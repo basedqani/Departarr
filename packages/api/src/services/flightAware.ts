@@ -1,4 +1,5 @@
 import { getSettingWithEnvFallback } from '../lib/settings.js'
+import { incrementUsage } from '../lib/apiBudget.js'
 
 const AEROAPI_BASE = 'https://aeroapi.flightaware.com/aeroapi'
 
@@ -82,6 +83,8 @@ export async function lookupFlight(ident: string, date: string): Promise<FlightD
   }
 
   const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}&end=${date}`
+  // Count this billable call BEFORE the fetch (so we count even on error)
+  await incrementUsage()
   const res = await fetch(url, {
     headers: { 'x-apikey': apiKey },
   })
@@ -104,6 +107,8 @@ export async function fetchFlightById(faFlightId: string): Promise<FlightData | 
   if (!apiKey) return null
 
   const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(faFlightId)}`
+  // Count this billable call BEFORE the fetch (so we count even on error)
+  await incrementUsage()
   const res = await fetch(url, { headers: { 'x-apikey': apiKey } })
   if (!res.ok) return null
 

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { getSetting, setSetting, RECOGNIZED_KEYS, type SettingKey } from '../lib/settings.js'
 import { authMiddleware, adminMiddleware } from '../middleware/auth.js'
+import { getUsage, getBudget, getMonthKey } from '../lib/apiBudget.js'
 
 /** Show the last 4 chars of a secret, masking the rest with asterisks. */
 function maskSecret(value: string): string {
@@ -17,7 +18,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
 
   // GET /api/settings — admin only
   app.get('/settings', { preHandler: adminGuard }, async (_req, reply) => {
-    const result: Record<string, string | boolean | null> = {}
+    const result: Record<string, string | boolean | null | object> = {}
 
     for (const key of RECOGNIZED_KEYS) {
       const value = await getSetting(key)
@@ -28,6 +29,15 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       } else {
         result[key] = value
       }
+    }
+
+    // Read-only AeroAPI usage summary
+    const now = new Date()
+    const [calls, budget] = await Promise.all([getUsage(now), getBudget()])
+    result['aeroapi_usage'] = {
+      month: getMonthKey(now).replace('_', '-'),
+      calls,
+      budget,
     }
 
     return reply.send(result)
