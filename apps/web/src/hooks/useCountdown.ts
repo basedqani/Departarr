@@ -104,10 +104,17 @@ function getTickInterval(flight: FlightTimes): number {
   return 60_000                               // otherwise: tick every 60s
 }
 
-export function useCountdown(flight: FlightTimes): string {
-  const [text, setText] = useState(() => computeCountdown(flight))
+// Accepts a nullable flight so callers can invoke the hook unconditionally
+// (above any early returns) per the Rules of Hooks, even before data loads.
+export function useCountdown(flight: FlightTimes | null | undefined): string {
+  const [text, setText] = useState(() => (flight ? computeCountdown(flight) : ''))
 
   useEffect(() => {
+    if (!flight) {
+      setText('')
+      return
+    }
+    setText(computeCountdown(flight))
     const interval = getTickInterval(flight)
     if (interval === 0) return
 

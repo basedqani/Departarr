@@ -434,6 +434,10 @@ export function FlightDetailPage(): React.ReactElement {
     return () => clearInterval(iv)
   }, [id])
 
+  // Countdown hook MUST run unconditionally before any early return (Rules of
+  // Hooks). It tolerates an undefined flight while the query is loading.
+  const countdown = useCountdown(flight)
+
   if (isLoading) return (
     <div className="loading" style={{ paddingTop: '4rem' }}>
       <div className="loading-spinner" />
@@ -444,9 +448,6 @@ export function FlightDetailPage(): React.ReactElement {
 
   const st = flight.status.toLowerCase().replace(/[\s_]+/g, '-')
   const isLive = st === 'en-route' || st === 'departed'
-
-  // Countdown text from hook
-  const countdown = useCountdown(flight)
 
   // Flight duration
   const durationMs = (() => {
