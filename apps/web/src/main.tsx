@@ -20,9 +20,26 @@ const persister = createSyncStoragePersister({
   storage: window.localStorage,
 })
 
+// Persist flight/trip data for offline use, but NEVER persist auth/config
+// state (me, features, settings). Those must always be revalidated from the
+// network so a promoted admin — or a signed-out user — is never read back from
+// stale localStorage.
+const NON_PERSISTED_KEYS = new Set(['me', 'features', 'settings'])
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister,
+        dehydrateOptions: {
+          shouldDehydrateQuery: (query) => {
+            if (NON_PERSISTED_KEYS.has(query.queryKey?.[0] as string)) return false
+            return query.state.status === 'success'
+          },
+        },
+      }}
+    >
       <App />
     </PersistQueryClientProvider>
   </React.StrictMode>

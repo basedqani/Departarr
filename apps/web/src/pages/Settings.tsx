@@ -195,7 +195,7 @@ export function SettingsPage(): React.ReactElement {
   const [searchParams, setSearchParams] = useSearchParams()
   const calendarStatus = searchParams.get('calendar')
 
-  const { data: user } = useQuery({ queryKey: ['me'], queryFn: api.auth.me })
+  const { data: user } = useQuery({ queryKey: ['me'], queryFn: api.auth.me, staleTime: 0, refetchOnMount: 'always' })
 
   // Public: which integrations the admin has configured
   const { data: features } = useQuery({

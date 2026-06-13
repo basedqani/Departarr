@@ -19,6 +19,8 @@ function RequireAuth({ children }: { children: React.ReactNode }): React.ReactEl
     queryKey: ['me'],
     queryFn: api.auth.me,
     retry: false,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   if (isLoading) return <div className="loading">Loading…</div>
