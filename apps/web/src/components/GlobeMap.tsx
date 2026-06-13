@@ -380,6 +380,32 @@ function headingBetween(a: [number, number], b: [number, number]): number {
   return (Math.atan2(b[0] - a[0], b[1] - a[1]) * 180) / Math.PI
 }
 
+// Rough great-circle distance in km (haversine) — used to sanity-check a live
+// ADS-B position against the planned route.
+function distanceKm(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const R = 6371
+  const dLat = ((bLat - aLat) * Math.PI) / 180
+  const dLon = ((bLon - aLon) * Math.PI) / 180
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)))
+}
+
+// Is the live position plausibly ON this route? OpenSky callsign matching can
+// grab the wrong aircraft, which dropped the plane off the arc entirely. We
+// accept the live fix only if it's within ~250km of some point on the arc.
+function positionOnArc(lat: number, lon: number, arcCoords?: [number, number][] | null): boolean {
+  if (!arcCoords || arcCoords.length === 0) return false
+  let min = Infinity
+  for (const [aLon, aLat] of arcCoords) {
+    const d = distanceKm(lat, lon, aLat, aLon)
+    if (d < min) min = d
+    if (min < 250) return true
+  }
+  return min < 250
+}
+
 function computePlanePosition(
   opts: {
     origin: string
@@ -406,8 +432,14 @@ function computePlanePosition(
     return orig ? { lat: orig.lat, lon: orig.lon } : null
   }
 
-  // In the air (departed / en-route): a real live position is best…
-  if (position && position.latitude && position.longitude && !position.onGround) {
+  // In the air (departed / en-route): a real live position is best — BUT only
+  // trust it when it actually lies on the planned route. A stray callsign match
+  // (e.g. plane shown over Morocco for an ORD→FRA flight) is rejected in favour
+  // of riding the arc.
+  if (
+    position && position.latitude && position.longitude && !position.onGround &&
+    positionOnArc(position.latitude, position.longitude, arcCoords)
+  ) {
     return { lat: position.latitude, lon: position.longitude, heading: position.heading }
   }
 

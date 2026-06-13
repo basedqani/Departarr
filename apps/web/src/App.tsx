@@ -15,17 +15,27 @@ import { SharePage } from './pages/Share'
 import { SettingsPage } from './pages/Settings'
 
 function RequireAuth({ children }: { children: React.ReactNode }): React.ReactElement {
-  const { data: user, isLoading } = useQuery({
+  const hasToken = typeof window !== 'undefined' && !!localStorage.getItem('token')
+
+  const { data: user, isError, fetchStatus } = useQuery({
     queryKey: ['me'],
     queryFn: api.auth.me,
     retry: false,
     staleTime: 0,
     refetchOnMount: 'always',
+    enabled: hasToken,
   })
 
-  if (isLoading) return <div className="loading">Loading…</div>
-  if (!user) return <Navigate to="/login" replace />
-  return <>{children}</>
+  // No token at all → straight to login.
+  if (!hasToken) return <Navigate to="/login" replace />
+  // Authenticated.
+  if (user) return <>{children}</>
+  // Still resolving (cache restore or in-flight request) — DON'T bounce to
+  // login yet. react-query reports isLoading:false while idle-pending during
+  // the persist-restore window, which previously caused a login redirect loop.
+  if (fetchStatus === 'fetching' || !isError) return <div className="loading">Loading…</div>
+  // Token present but /me definitively failed (e.g. expired) → login.
+  return <Navigate to="/login" replace />
 }
 
 function AuthenticatedApp(): React.ReactElement {

@@ -32,6 +32,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       client={queryClient}
       persistOptions={{
         persister,
+        // Bump to discard any older persisted cache shape (e.g. one that had a
+        // stale `me` baked in, which caused login redirect loops).
+        buster: 'v2',
         dehydrateOptions: {
           shouldDehydrateQuery: (query) => {
             if (NON_PERSISTED_KEYS.has(query.queryKey?.[0] as string)) return false
