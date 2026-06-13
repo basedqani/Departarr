@@ -87,6 +87,10 @@ export const api = {
   share: {
     get: (token: string) =>
       request<{ flight?: FlightWithEvents; trip?: TripWithFlights }>(`/share/${token}`),
+    pushSubscribe: (token: string, sub: PushSubscriptionJSON) =>
+      request<{ ok: boolean }>(`/share/${token}/push-subscribe`, { method: 'POST', body: JSON.stringify(sub) }),
+    pushUnsubscribe: (token: string, endpoint: string) =>
+      request<void>(`/share/${token}/push-subscribe`, { method: 'DELETE', body: JSON.stringify({ endpoint }) }),
   },
 
   push: {

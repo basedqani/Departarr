@@ -45,6 +45,35 @@ export async function sendPushToUser(userId: string, payload: object): Promise<v
   )
 }
 
+export async function sendPushToShareSubscribers(flightId: string, payload: object): Promise<void> {
+  await ensureInitialized()
+  if (!initialized) return
+
+  const tokens = await prisma.shareToken.findMany({
+    where: { flightId, revokedAt: null },
+    include: { sharePushSubscriptions: true },
+  })
+
+  const subs = tokens.flatMap(t => t.sharePushSubscriptions)
+  if (subs.length === 0) return
+
+  const message = JSON.stringify(payload)
+  await Promise.allSettled(
+    subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          message
+        )
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'statusCode' in err && (err as { statusCode: number }).statusCode === 410) {
+          await prisma.sharePushSubscription.deleteMany({ where: { endpoint: sub.endpoint } })
+        }
+      }
+    })
+  )
+}
+
 export function buildPushMessage(eventType: string, oldValue?: string | null, newValue?: string | null): string {
   switch (eventType) {
     case 'gate_change':

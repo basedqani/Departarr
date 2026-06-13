@@ -1,11 +1,11 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { lazy, Suspense, useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
 import { formatTime, formatDateTime, formatDuration, formatLocalTime, formatTzShift } from '../lib/format'
-import type { AircraftPosition, FlightWithEvents } from '../lib/api'
+import type { AircraftPosition, Flight, FlightWithEvents } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
 
@@ -189,6 +189,192 @@ function IconTicket(): React.ReactElement {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>
     </svg>
+  )
+}
+
+// ─── Connection Assistant ─────────────────────────────────────────────────────
+
+function getConnectionRating(minutes: number): { label: string; color: string; bgColor: string } {
+  if (minutes < 45) return { label: 'Risky',   color: 'var(--cancelled)', bgColor: 'rgba(248,113,113,0.12)' }
+  if (minutes < 60) return { label: 'Tight',   color: '#FF9500',          bgColor: 'rgba(255,149,0,0.12)' }
+  if (minutes < 90) return { label: 'Normal',  color: 'var(--accent)',    bgColor: 'rgba(77,168,255,0.12)' }
+  return               { label: 'Relaxed', color: 'var(--on-time)',  bgColor: 'rgba(52,211,153,0.12)' }
+}
+
+interface ConnectionInfo {
+  layoverAirport: string
+  inboundFlight: Flight
+  outboundFlight: Flight
+  effectiveMinutes: number
+  inboundDelayMin: number
+  rating: ReturnType<typeof getConnectionRating>
+}
+
+function buildConnections(currentFlight: FlightWithEvents, tripFlights: Flight[]): ConnectionInfo[] {
+  const result: ConnectionInfo[] = []
+
+  // Current flight is the OUTBOUND — find the inbound that delivered us to origin
+  const inbound = tripFlights.find(f => f.id !== currentFlight.id && f.destination === currentFlight.origin)
+  if (inbound) {
+    const inboundArr   = new Date(inbound.arrivalActual ?? inbound.arrivalEstimated ?? inbound.arrivalScheduled).getTime()
+    const outboundDep  = new Date(currentFlight.departureEstimated ?? currentFlight.departureScheduled).getTime()
+    const effectiveMin = Math.round((outboundDep - inboundArr) / 60_000)
+    const delayMin     = Math.round((inboundArr - new Date(inbound.arrivalScheduled).getTime()) / 60_000)
+    result.push({ layoverAirport: currentFlight.origin, inboundFlight: inbound, outboundFlight: currentFlight, effectiveMinutes: effectiveMin, inboundDelayMin: Math.max(0, delayMin), rating: getConnectionRating(effectiveMin) })
+  }
+
+  // Current flight is the INBOUND — find the outbound waiting at destination
+  const outbound = tripFlights.find(f => f.id !== currentFlight.id && f.origin === currentFlight.destination)
+  if (outbound) {
+    const inboundArr   = new Date(currentFlight.arrivalActual ?? currentFlight.arrivalEstimated ?? currentFlight.arrivalScheduled).getTime()
+    const outboundDep  = new Date(outbound.departureEstimated ?? outbound.departureScheduled).getTime()
+    const effectiveMin = Math.round((outboundDep - inboundArr) / 60_000)
+    const delayMin     = Math.round((inboundArr - new Date(currentFlight.arrivalScheduled).getTime()) / 60_000)
+    result.push({ layoverAirport: currentFlight.destination, inboundFlight: currentFlight, outboundFlight: outbound, effectiveMinutes: effectiveMin, inboundDelayMin: Math.max(0, delayMin), rating: getConnectionRating(effectiveMin) })
+  }
+
+  return result
+}
+
+function ConnectionCard({ flight }: { flight: FlightWithEvents }): React.ReactElement | null {
+  const { data: trip } = useQuery({
+    queryKey: ['trip', flight.tripId],
+    queryFn: () => api.trips.get(flight.tripId!),
+    enabled: !!flight.tripId,
+    staleTime: 2 * 60_000,
+  })
+
+  if (!trip || trip.flights.length < 2) return null
+  const connections = buildConnections(flight, trip.flights)
+  if (connections.length === 0) return null
+
+  return (
+    <>
+      {connections.map(conn => (
+        <div key={`${conn.inboundFlight.id}-${conn.outboundFlight.id}`} className="card" style={{ marginBottom: '0.875rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)' }}>
+              Connection at {conn.layoverAirport}
+            </div>
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: conn.rating.color, background: conn.rating.bgColor, borderRadius: 99, padding: '0.2rem 0.7rem', border: `1px solid ${conn.rating.color}44` }}>
+              {conn.rating.label}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '0.875rem', alignItems: 'center' }}>
+            <div style={{ minWidth: 56, textAlign: 'center' }}>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: conn.effectiveMinutes <= 0 ? 'var(--cancelled)' : conn.rating.color, lineHeight: 1 }}>
+                {conn.effectiveMinutes <= 0 ? '0m' : `${conn.effectiveMinutes}m`}
+              </div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>to connect</div>
+            </div>
+            <div style={{ flex: 1, borderLeft: '1px solid var(--hairline)', paddingLeft: '0.875rem', fontSize: '0.82rem' }}>
+              <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: '0.2rem' }}>
+                {conn.inboundFlight.ident} · {conn.inboundFlight.origin}–{conn.inboundFlight.destination}
+              </div>
+              {conn.inboundDelayMin > 5 ? (
+                <div style={{ color: 'var(--delayed)' }}>Inbound {conn.inboundDelayMin}m late</div>
+              ) : (
+                <div style={{ color: 'var(--on-time)' }}>Inbound on time</div>
+              )}
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                {conn.outboundFlight.ident} departs {formatTime(conn.outboundFlight.departureEstimated ?? conn.outboundFlight.departureScheduled)}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+// ─── Share sheet ─────────────────────────────────────────────────────────────
+
+interface ShareSheetProps {
+  url: string
+  flightId: string
+  flightIdent: string
+  onClose: () => void
+}
+
+function ShareSheet({ url, flightId, flightIdent, onClose }: ShareSheetProps): React.ReactElement {
+  const queryClient = useQueryClient()
+  const [copied, setCopied] = useState(false)
+  const [revoking, setRevoking] = useState(false)
+
+  async function doCopy(): Promise<void> {
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleNativeShare(): Promise<void> {
+    if ('share' in navigator) {
+      try {
+        await (navigator as Navigator & { share: (d: object) => Promise<void> }).share({ title: `${flightIdent} · Flight Status`, text: 'Track my flight live', url })
+        return
+      } catch { /* user cancelled */ }
+    }
+    await doCopy()
+  }
+
+  async function handleRevoke(): Promise<void> {
+    if (!window.confirm('Revoke share link? Anyone with the current link will lose access.')) return
+    setRevoking(true)
+    try {
+      await api.flights.revokeShare(flightId)
+      await queryClient.invalidateQueries({ queryKey: ['flight', flightId] })
+      onClose()
+    } catch {
+      setRevoking(false)
+    }
+  }
+
+  const hasNativeShare = 'share' in navigator
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200 }}>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        onClick={onClose}
+        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' as React.CSSProperties['backdropFilter'] }}
+      />
+      <motion.div
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: `1.25rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom, 0px))`, boxShadow: '0 -8px 40px rgba(0,0,0,0.5)' }}
+      >
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 1.25rem' }} />
+        <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text)' }}>
+          Share {flightIdent}
+        </div>
+        <div style={{ background: 'var(--surface-raised)', borderRadius: 10, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.78rem', fontFamily: 'monospace', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+          {url}
+        </div>
+        <button
+          onClick={() => void handleNativeShare()}
+          style={{ display: 'block', width: '100%', padding: '0.875rem', marginBottom: '0.5rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: 12, border: 'none', background: 'var(--accent)', color: '#000', cursor: 'pointer' }}
+        >
+          {hasNativeShare ? 'Share…' : copied ? '✓ Copied!' : 'Copy link'}
+        </button>
+        {hasNativeShare && (
+          <button
+            className="secondary"
+            onClick={() => void doCopy()}
+            style={{ display: 'block', width: '100%', padding: '0.875rem', marginBottom: '0.5rem', fontSize: '0.95rem', borderRadius: 12 }}
+          >
+            {copied ? '✓ Copied!' : 'Copy link'}
+          </button>
+        )}
+        <button
+          onClick={() => void handleRevoke()}
+          disabled={revoking}
+          style={{ display: 'block', width: '100%', padding: '0.875rem', fontSize: '0.875rem', borderRadius: 12, background: 'transparent', border: '1px solid rgba(248,113,113,0.3)', color: 'var(--cancelled)', cursor: 'pointer' }}
+        >
+          {revoking ? 'Revoking…' : 'Revoke link'}
+        </button>
+      </motion.div>
+    </div>
   )
 }
 
@@ -410,7 +596,7 @@ export function FlightDetailPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [shareSheet, setShareSheet] = useState<{ url: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [position, setPosition] = useState<AircraftPosition | null>(null)
 
@@ -480,11 +666,13 @@ export function FlightDetailPage(): React.ReactElement {
   async function handleShare(): Promise<void> {
     try {
       const res = await api.flights.share(id!)
-      setShareUrl(res.url)
+      const full = res.url.startsWith('/') ? `${window.location.origin}${res.url}` : res.url
+      setShareSheet({ url: full })
     } catch { /* noop */ }
   }
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -620,15 +808,6 @@ export function FlightDetailPage(): React.ReactElement {
           </div>
         </div>
 
-        {shareUrl && (
-          <div className="card" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem' }}>
-            <span style={{ flex: 1, fontSize: '0.82rem', wordBreak: 'break-all', color: 'var(--text-muted)' }}>{shareUrl}</span>
-            <button className="secondary" style={{ whiteSpace: 'nowrap', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={() => { void navigator.clipboard.writeText(shareUrl) }}>
-              Copy
-            </button>
-          </div>
-        )}
-
         {/* Aircraft photo (async, non-blocking) */}
         <Suspense fallback={null}>
           <AircraftPhotoCard flightId={id!} />
@@ -666,6 +845,9 @@ export function FlightDetailPage(): React.ReactElement {
 
         {/* OOOI Status timeline */}
         <OooiTimeline flight={flight} />
+
+        {/* Connection Assistant — shown when flight is part of a trip with connecting legs */}
+        <ConnectionCard flight={flight} />
 
         {/* Booking card */}
         <BookingCard
@@ -772,5 +954,17 @@ export function FlightDetailPage(): React.ReactElement {
         )}
       </div>
     </motion.div>
+
+    <AnimatePresence>
+      {shareSheet && (
+        <ShareSheet
+          url={shareSheet.url}
+          flightId={id!}
+          flightIdent={flight.ident}
+          onClose={() => setShareSheet(null)}
+        />
+      )}
+    </AnimatePresence>
+    </>
   )
 }

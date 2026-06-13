@@ -40,6 +40,52 @@ export async function shareRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(204).send()
   })
 
+  // POST /api/share/:token/push-subscribe — PUBLIC, no auth
+  app.post('/share/:token/push-subscribe', async (req, reply) => {
+    const { token } = req.params as { token: string }
+    const body = req.body as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
+
+    if (!body?.endpoint || !body?.keys?.p256dh || !body?.keys?.auth) {
+      return reply.code(400).send({ error: 'Missing endpoint or keys' })
+    }
+
+    const shareToken = await prisma.shareToken.findUnique({ where: { token } })
+    if (!shareToken || shareToken.revokedAt) {
+      return reply.code(404).send({ error: 'Share token not found or revoked' })
+    }
+
+    await prisma.sharePushSubscription.upsert({
+      where: { endpoint: body.endpoint },
+      create: {
+        shareTokenId: shareToken.id,
+        endpoint: body.endpoint,
+        p256dh: body.keys.p256dh,
+        auth: body.keys.auth,
+      },
+      update: {
+        shareTokenId: shareToken.id,
+        p256dh: body.keys.p256dh,
+        auth: body.keys.auth,
+      },
+    })
+    return reply.code(201).send({ ok: true })
+  })
+
+  // DELETE /api/share/:token/push-subscribe — PUBLIC, no auth
+  app.delete('/share/:token/push-subscribe', async (req, reply) => {
+    const { token } = req.params as { token: string }
+    const body = req.body as { endpoint?: string }
+    if (!body?.endpoint) return reply.code(400).send({ error: 'Missing endpoint' })
+
+    const shareToken = await prisma.shareToken.findUnique({ where: { token } })
+    if (!shareToken) return reply.code(404).send({ error: 'Share token not found' })
+
+    await prisma.sharePushSubscription.deleteMany({
+      where: { endpoint: body.endpoint, shareTokenId: shareToken.id },
+    })
+    return reply.code(204).send()
+  })
+
   // GET /api/share/:token — PUBLIC, no auth
   app.get('/share/:token', async (req, reply) => {
     const { token } = req.params as { token: string }

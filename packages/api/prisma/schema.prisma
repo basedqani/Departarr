@@ -101,6 +101,17 @@ model ShareToken {
   token     String    @unique
   createdAt DateTime  @default(now())
   revokedAt DateTime?
+  sharePushSubscriptions SharePushSubscription[]
+}
+
+model SharePushSubscription {
+  id           String     @id @default(cuid())
+  shareTokenId String
+  shareToken   ShareToken @relation(fields: [shareTokenId], references: [id], onDelete: Cascade)
+  endpoint     String     @unique
+  p256dh       String
+  auth         String
+  createdAt    DateTime   @default(now())
 }
 
 model CalendarConnection {
