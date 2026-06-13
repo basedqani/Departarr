@@ -47,6 +47,8 @@ export const api = {
       request<Flight[]>(`/flights${when ? `?when=${when}` : ''}`),
     get: (id: string) =>
       request<FlightWithEvents>(`/flights/${id}`),
+    lookup: (ident: string, date: string) =>
+      request<FlightPreview>(`/flights/lookup?ident=${encodeURIComponent(ident)}&date=${encodeURIComponent(date)}`),
     add: (data: { ident: string; date: string; tripId?: string }) =>
       request<Flight>('/flights', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) =>
@@ -170,6 +172,26 @@ export interface Flight {
   lastPolledAt: string | null
   createdAt: string
   trip?: { id: string; name: string } | null
+}
+
+// Result of a non-persisting lookup (preview before the user confirms adding)
+export interface FlightPreview {
+  faFlightId?: string
+  airlineIata?: string
+  flightNumber?: string
+  origin: string
+  destination: string
+  departureScheduled: string
+  departureEstimated?: string | null
+  arrivalScheduled: string
+  arrivalEstimated?: string | null
+  status: string
+  gateDeparture?: string | null
+  gateArrival?: string | null
+  terminalDeparture?: string | null
+  terminalArrival?: string | null
+  aircraftType?: string | null
+  registration?: string | null
 }
 
 export interface AircraftPhoto {

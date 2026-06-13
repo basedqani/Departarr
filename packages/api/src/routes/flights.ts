@@ -17,6 +17,11 @@ const patchFlightSchema = z.object({
   tripId: z.string().nullable().optional(),
 })
 
+const lookupQuerySchema = z.object({
+  ident: z.string().min(2).max(10),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+})
+
 // In-memory photo cache: registration -> { data, expires }
 interface PhotoCacheEntry {
   data: { url: string; link: string; photographer: string } | null
@@ -57,6 +62,17 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
       include: { trip: { select: { id: true, name: true } } },
     })
     return reply.send(flights)
+  })
+
+  // GET /api/flights/lookup — preview a flight WITHOUT saving it, so the user
+  // can confirm before adding. (Static path is matched before /flights/:id.)
+  app.get('/flights/lookup', async (req, reply) => {
+    const q = lookupQuerySchema.safeParse(req.query)
+    if (!q.success) return reply.code(400).send({ error: q.error.flatten() })
+
+    const data = await lookupFlight(q.data.ident.toUpperCase().replace(/\s+/g, ''), q.data.date)
+    if (!data) return reply.code(404).send({ error: 'Flight not found' })
+    return reply.send(data)
   })
 
   // POST /api/flights

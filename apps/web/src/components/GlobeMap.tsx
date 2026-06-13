@@ -49,6 +49,8 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('maplibre-gl').Map | null>(null)
   const markerRef = useRef<import('maplibre-gl').Marker | null>(null)
+  // Flattened great-circle coords, so the plane can ride the actual arc
+  const arcCoordsRef = useRef<[number, number][] | null>(null)
   // Store the "frame the route" camera action so the recenter button re-runs it
   const frameCameraRef = useRef<((duration?: number) => void) | null>(null)
 
@@ -126,6 +128,16 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
             const start = point([originAirport.lon, originAirport.lat])
             const end = point([destAirport.lon, destAirport.lat])
             const arc = greatCircle(start, end, { npoints: 100 })
+
+            // Flatten the arc coords so the plane marker can ride the real
+            // great-circle track (not a straight lat/lon line). turf returns a
+            // MultiLineString when the arc splits at the antimeridian.
+            {
+              const c = arc.geometry.coordinates as [number, number][] | [number, number][][]
+              arcCoordsRef.current = (Array.isArray(c[0][0])
+                ? (c as [number, number][][]).flat()
+                : (c as [number, number][])) as [number, number][]
+            }
 
             // Add source
             if (!map.getSource('flight-arc')) {
@@ -262,15 +274,16 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
         const marker = new Marker({ element: planeEl, anchor: 'center', rotationAlignment: 'map' })
         markerRef.current = marker
 
-        // Position plane
-        const planePos = computePlanePosition({ origin, destination, position, departureScheduled, arrivalScheduled, status })
-        if (planePos) {
-          marker.setLngLat([planePos.lon, planePos.lat])
-          if (planePos.heading !== undefined) {
-            marker.setRotation(planePos.heading)
+        // Position plane (deferred a tick so the arc coords are populated first)
+        setTimeout(() => {
+          if (cancelled) return
+          const planePos = computePlanePosition({ origin, destination, position, departureScheduled, arrivalScheduled, status }, arcCoordsRef.current)
+          if (planePos) {
+            marker.setLngLat([planePos.lon, planePos.lat])
+            if (planePos.heading !== undefined) marker.setRotation(planePos.heading)
+            marker.addTo(map)
           }
-          marker.addTo(map)
-        }
+        }, 0)
       })
     })()
 
@@ -284,20 +297,27 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [origin, destination])
 
-  // Update plane position on position prop change
+  // Update plane position on position prop / status change, and keep an
+  // in-flight aircraft drifting along the arc between data refreshes.
   useEffect(() => {
-    const map = mapRef.current
-    const marker = markerRef.current
-    if (!map || !marker) return
-
-    const planePos = computePlanePosition({ origin, destination, position, departureScheduled, arrivalScheduled, status })
-    if (planePos) {
-      marker.setLngLat([planePos.lon, planePos.lat])
-      if (planePos.heading !== undefined) {
-        marker.setRotation(planePos.heading)
+    const place = (): void => {
+      const map = mapRef.current
+      const marker = markerRef.current
+      if (!map || !marker) return
+      const planePos = computePlanePosition({ origin, destination, position, departureScheduled, arrivalScheduled, status }, arcCoordsRef.current)
+      if (planePos) {
+        marker.setLngLat([planePos.lon, planePos.lat])
+        if (planePos.heading !== undefined) marker.setRotation(planePos.heading)
+        marker.addTo(map)
       }
-      marker.addTo(map)
     }
+    place()
+
+    const st = (status ?? '').toLowerCase().replace(/[\s_]+/g, '-')
+    const inAir = st === 'departed' || st === 'en-route'
+    if (!inAir) return
+    const id = setInterval(place, 20_000)
+    return () => clearInterval(id)
   }, [position, origin, destination, departureScheduled, arrivalScheduled, status])
 
   return (
@@ -355,48 +375,66 @@ interface PlanePos {
   heading?: number
 }
 
-function computePlanePosition(opts: {
-  origin: string
-  destination: string
-  position?: AircraftPosition | null
-  departureScheduled?: string
-  arrivalScheduled?: string
-  status?: string
-}): PlanePos | null {
-  const { position, origin, destination, departureScheduled, arrivalScheduled, status } = opts
+function headingBetween(a: [number, number], b: [number, number]): number {
+  // a, b are [lon, lat]
+  return (Math.atan2(b[0] - a[0], b[1] - a[1]) * 180) / Math.PI
+}
 
-  // Live position available
-  if (position && position.latitude && position.longitude) {
+function computePlanePosition(
+  opts: {
+    origin: string
+    destination: string
+    position?: AircraftPosition | null
+    departureScheduled?: string
+    arrivalScheduled?: string
+    status?: string
+  },
+  arcCoords?: [number, number][] | null
+): PlanePos | null {
+  const { position, origin, destination, departureScheduled, arrivalScheduled, status } = opts
+  const st = (status ?? '').toLowerCase().replace(/[\s_]+/g, '-')
+  const orig = getAirport(origin)
+  const dest = getAirport(destination)
+
+  // STATUS WINS over any live position. A not-yet-departed (or already-landed)
+  // flight must sit at its endpoint — never at a stray ADS-B callsign match
+  // from a different aircraft (which used to drop the plane in the Pacific).
+  if (st === 'arrived' || st === 'landed') {
+    return dest ? { lat: dest.lat, lon: dest.lon } : null
+  }
+  if (st === 'scheduled' || st === 'boarding' || st === 'delayed' || st === 'cancelled' || st === 'unknown' || st === '') {
+    return orig ? { lat: orig.lat, lon: orig.lon } : null
+  }
+
+  // In the air (departed / en-route): a real live position is best…
+  if (position && position.latitude && position.longitude && !position.onGround) {
     return { lat: position.latitude, lon: position.longitude, heading: position.heading }
   }
 
-  const st = (status ?? '').toLowerCase()
-  if (st === 'landed' || st === 'arrived') {
-    const dest = getAirport(destination)
-    if (dest) return { lat: dest.lat, lon: dest.lon }
-  }
-  if (st === 'scheduled' || st === 'boarding') {
-    const orig = getAirport(origin)
-    if (orig) return { lat: orig.lat, lon: orig.lon }
-  }
-
-  // Interpolate along arc by time fraction
+  // …otherwise ride the great-circle arc by time fraction.
+  let frac = 0
   if (departureScheduled && arrivalScheduled) {
     const dep = new Date(departureScheduled).getTime()
     const arr = new Date(arrivalScheduled).getTime()
     const now = Date.now()
-    if (dep <= now && now <= arr) {
-      const frac = Math.max(0, Math.min(1, (now - dep) / (arr - dep)))
-      const orig = getAirport(origin)
-      const dest = getAirport(destination)
-      if (orig && dest) {
-        const lat = orig.lat + (dest.lat - orig.lat) * frac
-        const lon = orig.lon + (dest.lon - orig.lon) * frac
-        const heading = Math.atan2(dest.lon - orig.lon, dest.lat - orig.lat) * 180 / Math.PI
-        return { lat, lon, heading }
-      }
-    }
+    if (arr > dep) frac = Math.max(0, Math.min(1, (now - dep) / (arr - dep)))
   }
 
+  if (arcCoords && arcCoords.length > 1) {
+    const lastIdx = arcCoords.length - 1
+    const i = Math.max(0, Math.min(lastIdx, Math.round(frac * lastIdx)))
+    const p = arcCoords[i]
+    const next = arcCoords[Math.min(lastIdx, i + 1)]
+    return { lat: p[1], lon: p[0], heading: headingBetween(p, next) }
+  }
+
+  // Fallback: straight-line interpolation if the arc isn't ready yet.
+  if (orig && dest) {
+    return {
+      lat: orig.lat + (dest.lat - orig.lat) * frac,
+      lon: orig.lon + (dest.lon - orig.lon) * frac,
+      heading: headingBetween([orig.lon, orig.lat], [dest.lon, dest.lat]),
+    }
+  }
   return null
 }

@@ -599,6 +599,7 @@ export function FlightDetailPage(): React.ReactElement {
   const [shareSheet, setShareSheet] = useState<{ url: string } | null>(null)
   const [sharing, setSharing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [position, setPosition] = useState<AircraftPosition | null>(null)
 
   const { data: flight, isLoading } = useQuery({
@@ -655,13 +656,22 @@ export function FlightDetailPage(): React.ReactElement {
   )
 
   async function handleDelete(): Promise<void> {
-    if (!confirm('Delete this flight?')) return
+    // Uses an in-app confirm (below), NOT window.confirm — browsers can suppress
+    // native dialogs after repeated prompts, which silently broke deletion.
     setDeleting(true)
     try {
       await api.flights.delete(id!)
+      // Drop it from every cached list immediately so it can't reappear.
+      queryClient.setQueriesData<unknown[]>({ queryKey: ['flights'] }, (old) =>
+        Array.isArray(old) ? old.filter((f) => (f as { id?: string })?.id !== id) : old
+      )
       await queryClient.invalidateQueries({ queryKey: ['flights'] })
-      navigate(-1)
-    } catch { setDeleting(false) }
+      navigate('/today')
+    } catch (err) {
+      setDeleting(false)
+      setConfirmDelete(false)
+      alert(err instanceof Error ? err.message : 'Could not delete this flight')
+    }
   }
 
   async function handleShare(): Promise<void> {
@@ -772,12 +782,25 @@ export function FlightDetailPage(): React.ReactElement {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-            <button className="secondary" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => void handleShare()} disabled={sharing}>
-              {sharing ? 'Sharing…' : 'Share'}
-            </button>
-            <button className="danger" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => void handleDelete()} disabled={deleting}>
-              Delete
-            </button>
+            {confirmDelete ? (
+              <>
+                <button className="secondary" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => setConfirmDelete(false)} disabled={deleting}>
+                  Cancel
+                </button>
+                <button className="danger" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }} onClick={() => void handleDelete()} disabled={deleting}>
+                  {deleting ? 'Deleting…' : 'Confirm delete'}
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="secondary" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => void handleShare()} disabled={sharing}>
+                  {sharing ? 'Sharing…' : 'Share'}
+                </button>
+                <button className="danger" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => setConfirmDelete(true)}>
+                  Delete
+                </button>
+              </>
+            )}
           </div>
         </div>
 
