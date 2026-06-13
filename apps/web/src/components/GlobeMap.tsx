@@ -14,20 +14,46 @@ interface Props {
 }
 
 // Plane SVG used as marker HTML
-const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" fill="#4da8ff" style="filter:drop-shadow(0 0 6px #4da8ff99)"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`
+const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" fill="#eaf4ff" style="filter:drop-shadow(0 0 6px #5db4ffcc)"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`
+
+// Recolor a default vector basemap into a premium "midnight" palette — deep
+// ocean blue, near-black land, faint glowing borders. Heuristic by layer id so
+// it works across style variants without hardcoding exact layer names.
+function applyPremiumTheme(map: import('maplibre-gl').Map): void {
+  let layers: Array<{ id: string; type: string }>
+  try {
+    layers = (map.getStyle()?.layers ?? []) as Array<{ id: string; type: string }>
+  } catch {
+    return
+  }
+  for (const layer of layers) {
+    const id = layer.id.toLowerCase()
+    try {
+      if (layer.type === 'background') {
+        map.setPaintProperty(layer.id, 'background-color', '#070d1a')
+      } else if (id.includes('water') || id.includes('ocean') || id.includes('sea') || id.includes('marine') || id.includes('bathymetry')) {
+        if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#0a1e3d')
+        else if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', '#0a1e3d')
+      } else if (id.includes('boundary') || id.includes('admin') || id.includes('border')) {
+        if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', 'rgba(125,155,205,0.22)')
+      } else if (id.includes('land') || id.includes('earth') || id.includes('park') || id.includes('forest') || id.includes('wood') || id.includes('grass')) {
+        if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#0c1322')
+      }
+    } catch {
+      // some layers don't accept the property — skip
+    }
+  }
+}
 
 export function GlobeMap({ origin, destination, position, departureScheduled, arrivalScheduled, status }: Props): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('maplibre-gl').Map | null>(null)
   const markerRef = useRef<import('maplibre-gl').Marker | null>(null)
-  // Store easeTo params so the recenter button can re-run them
-  const easeToCenterRef = useRef<{ center: [number, number]; zoom: number } | null>(null)
+  // Store the "frame the route" camera action so the recenter button re-runs it
+  const frameCameraRef = useRef<((duration?: number) => void) | null>(null)
 
   const handleRecenter = useCallback(() => {
-    const map = mapRef.current
-    const params = easeToCenterRef.current
-    if (!map || !params) return
-    map.easeTo({ center: params.center, zoom: params.zoom, duration: 900 })
+    frameCameraRef.current?.(900)
   }, [])
 
   useEffect(() => {
@@ -75,19 +101,22 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
           // fallback: mercator is fine
         }
 
-        // Sky / atmosphere for floating-in-space look
+        // Sky / atmosphere for floating-in-space look — bluish horizon glow
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ;(map as any).setFog({
-            color: 'rgba(5, 8, 15, 0)',
-            'high-color': 'rgba(5, 8, 15, 0.9)',
-            'horizon-blend': 0.08,
-            'space-color': '#05080f',
-            'star-intensity': 0.15,
+            color: 'rgba(8, 16, 32, 0)',
+            'high-color': 'rgba(40, 90, 170, 0.45)',
+            'horizon-blend': 0.12,
+            'space-color': '#04060d',
+            'star-intensity': 0.22,
           })
         } catch {
           // older API — skip
         }
+
+        // Recolor the bland default style into a premium midnight cartography.
+        applyPremiumTheme(map)
 
         if (!originAirport || !destAirport) return
 
@@ -106,7 +135,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
               })
             }
 
-            // Halo layer
+            // Wide soft glow
             if (!map.getLayer('flight-arc-halo')) {
               map.addLayer({
                 id: 'flight-arc-halo',
@@ -114,14 +143,15 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'flight-arc',
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                  'line-color': '#4da8ff',
-                  'line-width': 8,
-                  'line-opacity': 0.12,
+                  'line-color': '#5db4ff',
+                  'line-width': 12,
+                  'line-opacity': 0.16,
+                  'line-blur': 6,
                 },
               })
             }
 
-            // Core line
+            // Core line — bright, crisp
             if (!map.getLayer('flight-arc-line')) {
               map.addLayer({
                 id: 'flight-arc-line',
@@ -129,9 +159,9 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'flight-arc',
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                  'line-color': '#4da8ff',
+                  'line-color': '#8fd0ff',
                   'line-width': 2.5,
-                  'line-opacity': 0.9,
+                  'line-opacity': 0.95,
                 },
               })
             }
@@ -150,6 +180,21 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
               })
             }
 
+            // Soft glow under the airport dots
+            if (!map.getLayer('airport-glow')) {
+              map.addLayer({
+                id: 'airport-glow',
+                type: 'circle',
+                source: 'airports',
+                paint: {
+                  'circle-radius': 12,
+                  'circle-color': '#5db4ff',
+                  'circle-opacity': 0.18,
+                  'circle-blur': 1,
+                },
+              })
+            }
+
             if (!map.getLayer('airport-dots')) {
               map.addLayer({
                 id: 'airport-dots',
@@ -157,47 +202,50 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'airports',
                 paint: {
                   'circle-radius': 5,
-                  'circle-color': '#4da8ff',
-                  'circle-opacity': 0.9,
-                  'circle-stroke-color': '#05080f',
-                  'circle-stroke-width': 2,
+                  'circle-color': '#eaf4ff',
+                  'circle-opacity': 1,
+                  'circle-stroke-color': '#5db4ff',
+                  'circle-stroke-width': 2.5,
                 },
               })
             }
 
-            // Camera: center on arc midpoint. fitBounds breaks for
-            // antimeridian-crossing routes (lat/lon span ±180 → world bbox).
-            // turf returns a MultiLineString when the arc splits at ±180, so
-            // coords may be [[...pairs...], [...pairs...]] rather than [...pairs].
-            // Flatten to a single list of [lon, lat] pairs before picking the mid.
+            // Camera: tightly frame the two airports so the route fills the
+            // view instead of floating as a tiny line on a whole continent.
             type Coord = [number, number]
             const raw = arc.geometry.coordinates as Coord[] | Coord[][]
             const isMulti = Array.isArray(raw[0][0])
-            const flatCoords: Coord[] = isMulti
-              ? (raw as Coord[][]).flat()
-              : (raw as Coord[])
-            // For MultiLineString (antimeridian split), use the longer segment's
-            // midpoint so the camera lands over the main arc, not the seam.
-            let mid: Coord
-            if (isMulti) {
-              const segs = raw as Coord[][]
-              const longest = segs.reduce((a, b) => a.length >= b.length ? a : b)
-              mid = longest[Math.floor(longest.length / 2)]
-            } else {
-              mid = flatCoords[Math.floor(flatCoords.length / 2)]
+
+            const frame = (duration = 1200): void => {
+              try {
+                if (isMulti) {
+                  // Antimeridian-crossing (e.g. LAX→NRT): fitBounds breaks
+                  // (spans ±180 → world bbox), so ease to the longer segment's
+                  // midpoint at a distance-appropriate zoom.
+                  const segs = raw as Coord[][]
+                  const longest = segs.reduce((a, b) => (a.length >= b.length ? a : b))
+                  const mid = longest[Math.floor(longest.length / 2)]
+                  const allLats = segs.flat().map(c => c[1])
+                  const latSpan = Math.max(...allLats) - Math.min(...allLats)
+                  const zoom = latSpan > 35 ? 1.4 : latSpan > 20 ? 1.9 : 2.6
+                  map.easeTo({ center: [mid[0], mid[1]], zoom, duration })
+                } else {
+                  // Normal route: fit both airports with breathing room. maxZoom
+                  // keeps short hops (e.g. MSP→ORD) from zooming in too far.
+                  const lons = [originAirport.lon, destAirport.lon]
+                  const lats = [originAirport.lat, destAirport.lat]
+                  map.fitBounds(
+                    [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+                    { padding: { top: 80, bottom: 110, left: 70, right: 70 }, maxZoom: 5.2, duration }
+                  )
+                }
+              } catch {
+                // ignore camera errors
+              }
             }
-            const lats = flatCoords.map(c => c[1])
-            const latSpan = Math.max(...lats) - Math.min(...lats)
-            // Globe projection in a 45vh hero: zoom out aggressively so the arc
-            // fits. Short domestic routes need ~2.5, long-haul ~1.0.
-            const zoom = latSpan > 35 ? 0.8 : latSpan > 20 ? 1.5 : 2.5
-            // Store for recenter button
-            easeToCenterRef.current = { center: [mid[0], mid[1]], zoom }
-            try {
-              map.easeTo({ center: [mid[0], mid[1]], zoom, duration: 1200 })
-            } catch {
-              // ignore
-            }
+
+            frameCameraRef.current = frame
+            frame()
           } catch {
             // arc computation failed — skip
           }
