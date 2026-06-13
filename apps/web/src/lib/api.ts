@@ -51,8 +51,20 @@ export const api = {
       request<Flight>('/flights', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<void>(`/flights/${id}`, { method: 'DELETE' }),
+    patch: (id: string, body: { seat?: string | null; confirmationCode?: string | null; tripId?: string | null }) =>
+      request<Flight>(`/flights/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     position: (id: string) =>
       request<AircraftPosition>(`/flights/${id}/position`),
+    getPhoto: async (id: string): Promise<AircraftPhoto | null> => {
+      const token = localStorage.getItem('token')
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
+      const res = await fetch(`${BASE_URL}/flights/${id}/photo`, { headers })
+      if (res.status === 204) return null
+      if (!res.ok) return null
+      return res.json() as Promise<AircraftPhoto>
+    },
     share: (id: string) =>
       request<{ token: string; url: string }>(`/flights/${id}/share`, { method: 'POST' }),
     revokeShare: (id: string) =>
@@ -101,6 +113,7 @@ export interface User {
   id: string
   email: string
   name: string
+  isAdmin: boolean
   createdAt: string
 }
 
@@ -120,6 +133,16 @@ export interface Flight {
   arrivalScheduled: string
   arrivalEstimated: string | null
   arrivalActual: string | null
+  // OOOI fields
+  takeoffScheduled: string | null
+  takeoffEstimated: string | null
+  takeoffActual: string | null
+  landingScheduled: string | null
+  landingEstimated: string | null
+  landingActual: string | null
+  // Booking details
+  seat: string | null
+  confirmationCode: string | null
   status: string
   gateDeparture: string | null
   gateArrival: string | null
@@ -131,6 +154,12 @@ export interface Flight {
   lastPolledAt: string | null
   createdAt: string
   trip?: { id: string; name: string } | null
+}
+
+export interface AircraftPhoto {
+  url: string
+  link: string
+  photographer: string
 }
 
 export interface FlightEvent {
