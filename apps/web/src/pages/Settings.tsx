@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { api, clearToken } from '../lib/api'
@@ -192,7 +192,16 @@ export function SettingsPage(): React.ReactElement {
   const [syncLoading, setSyncLoading] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const calendarStatus = searchParams.get('calendar')
+
   const { data: user } = useQuery({ queryKey: ['me'], queryFn: api.auth.me })
+
+  // Public: which integrations the admin has configured
+  const { data: features } = useQuery({
+    queryKey: ['features'],
+    queryFn: api.features.get,
+  })
 
   // Only fetch settings if admin
   const { data: settings, refetch: refetchSettings } = useQuery({
@@ -292,15 +301,30 @@ export function SettingsPage(): React.ReactElement {
       {user?.isAdmin && (
         <>
           <div className="settings-section">
-            <div className="settings-section-title">Data Sources</div>
+            <div className="settings-section-title">Flight Data</div>
+            <div style={{ padding: '0 1rem 0.75rem', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              Set one source to get real flight tracking for everyone. Until then the app runs on realistic demo data.
+            </div>
+            <SettingRow
+              label="AeroDataBox API Key"
+              hint="Recommended · free 600 lookups/month, no credit card"
+              hintLink="https://rapidapi.com/aedbx-aedbx/api/aerodatabox"
+              hintLinkText="Get a free key on RapidAPI"
+              currentValue={(settings?.aerodatabox_api_key as string | null) ?? null}
+              onSave={v => saveSetting('aerodatabox_api_key', v)}
+            />
             <SettingRow
               label="FlightAware API Key"
-              hint="Real-time flight data"
+              hint="Premium alternative · most complete data ($5/mo free credit)"
               hintLink="https://www.flightaware.com/commercial/aeroapi"
               hintLinkText="Get a key at flightaware.com"
               currentValue={(settings?.flightaware_api_key as string | null) ?? null}
               onSave={v => saveSetting('flightaware_api_key', v)}
             />
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Integrations</div>
             <SettingRow
               label="Google Client ID"
               hint="Required for Google Calendar import"
@@ -360,23 +384,53 @@ export function SettingsPage(): React.ReactElement {
       {/* Calendar */}
       <div className="settings-section">
         <div className="settings-section-title">Calendar</div>
+
+        {calendarStatus === 'connected' && (
+          <div style={{ margin: '0 0 0.5rem', padding: '0.7rem 1rem', borderRadius: 12, background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', fontSize: '0.82rem', color: 'var(--on-time)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+            Google Calendar connected. Tap Sync to import flights.
+            <button onClick={() => setSearchParams({})} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--on-time)', cursor: 'pointer', fontSize: '1.1rem', padding: 0, lineHeight: 1 }}>×</button>
+          </div>
+        )}
+        {calendarStatus === 'not_configured' && (
+          <div style={{ margin: '0 0 0.5rem', padding: '0.7rem 1rem', borderRadius: 12, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)', fontSize: '0.82rem', color: 'var(--delayed)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Google Calendar isn’t set up yet{user?.isAdmin ? '. Add a Client ID & Secret in Data Sources above.' : '. Ask your admin to configure it.'}
+            <button onClick={() => setSearchParams({})} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--delayed)', cursor: 'pointer', fontSize: '1.1rem', padding: 0, lineHeight: 1 }}>×</button>
+          </div>
+        )}
+
         <div className="settings-row">
           <div>
             <div className="settings-row-label">Google Calendar</div>
-            <div className="settings-row-sub">Automatically detect and import flights from your calendar events.</div>
+            <div className="settings-row-sub">
+              {features?.googleCalendar
+                ? 'Automatically detect and import flights from your calendar events.'
+                : user?.isAdmin
+                  ? 'Add a Google Client ID & Secret in Data Sources to enable calendar import.'
+                  : 'Not available — your admin hasn’t set up Google Calendar.'}
+            </div>
           </div>
-          <a href={`/api/auth/google?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`} style={{ flexShrink: 0 }}>
-            <button className="secondary" style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+          {features?.googleCalendar ? (
+            <a href={`/api/auth/google?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`} style={{ flexShrink: 0 }}>
+              <button className="secondary" style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                Connect
+              </button>
+            </a>
+          ) : (
+            <button className="secondary" disabled style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap', opacity: 0.5, cursor: 'not-allowed', flexShrink: 0 }}>
               Connect
             </button>
-          </a>
+          )}
         </div>
-        <div className="settings-row">
-          <div className="settings-row-label">Sync now</div>
-          <button className="secondary" onClick={() => void handleCalendarSync()} disabled={syncLoading} style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-            {syncLoading ? 'Syncing…' : 'Sync'}
-          </button>
-        </div>
+        {features?.googleCalendar && (
+          <div className="settings-row">
+            <div className="settings-row-label">Sync now</div>
+            <button className="secondary" onClick={() => void handleCalendarSync()} disabled={syncLoading} style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+              {syncLoading ? 'Syncing…' : 'Sync'}
+            </button>
+          </div>
+        )}
         {syncResult && (
           <div style={{ padding: '0.5rem 1rem 0.875rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{syncResult}</div>
         )}
@@ -385,6 +439,24 @@ export function SettingsPage(): React.ReactElement {
       {/* About */}
       <div className="settings-section">
         <div className="settings-section-title">About</div>
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-label">Flight data</div>
+            <div className="settings-row-sub">
+              {features?.liveData
+                ? `Live tracking via ${features.provider}.`
+                : 'Running on realistic demo data.' + (user?.isAdmin ? ' Add a flight-data key above for real tracking.' : ' Ask your admin to enable live tracking.')}
+            </div>
+          </div>
+          <span style={{
+            fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
+            borderRadius: 99, padding: '0.2rem 0.6rem', flexShrink: 0,
+            background: features?.liveData ? 'rgba(52,211,153,0.15)' : 'rgba(77,168,255,0.15)',
+            color: features?.liveData ? 'var(--on-time)' : 'var(--accent)',
+          }}>
+            {features?.liveData ? 'Live' : 'Demo'}
+          </span>
+        </div>
         <div className="settings-row">
           <div>
             <div className="settings-row-label">Install on iOS</div>

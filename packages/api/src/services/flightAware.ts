@@ -1,7 +1,29 @@
 import { getSettingWithEnvFallback } from '../lib/settings.js'
-import { incrementUsage } from '../lib/apiBudget.js'
+import { incrementUsage, isOverBudget } from '../lib/apiBudget.js'
+import { generateStubFlight } from './stubData.js'
+import { lookupAeroDataBox, getAeroDataBoxKey, ADB_PROVIDER } from './aeroDataBox.js'
 
 const AEROAPI_BASE = 'https://aeroapi.flightaware.com/aeroapi'
+
+export type ProviderId = 'flightaware' | 'aerodatabox' | 'demo'
+
+/**
+ * Which real data provider is active, in priority order:
+ *   FlightAware (premium) → AeroDataBox (free real data) → Demo (no key).
+ */
+export async function getActiveProvider(): Promise<ProviderId> {
+  if (await getApiKey()) return 'flightaware'
+  if (await getAeroDataBoxKey()) return 'aerodatabox'
+  return 'demo'
+}
+
+/** Budget guard the poller consults before making real calls. Demo = free. */
+export async function isActiveProviderOverBudget(): Promise<boolean> {
+  const provider = await getActiveProvider()
+  if (provider === 'flightaware') return isOverBudget('aeroapi')
+  if (provider === 'aerodatabox') return isOverBudget(ADB_PROVIDER)
+  return false // demo mode never costs anything
+}
 
 export interface FlightData {
   faFlightId?: string
@@ -75,16 +97,27 @@ function mapFlight(f: any): FlightData {
   }
 }
 
+/**
+ * Public flight lookup — dispatches to the active provider:
+ *   FlightAware → AeroDataBox → Demo. Real providers fall through to demo only
+ *   when unconfigured, never on a "flight not found" (that returns null so the
+ *   user sees an honest "couldn't find that flight" message).
+ */
 export async function lookupFlight(ident: string, date: string): Promise<FlightData | null> {
   const apiKey = await getApiKey()
-  if (!apiKey) {
-    console.warn('FlightAware API key not set — returning stub flight data')
-    return stubFlight(ident, date)
-  }
+  if (apiKey) return lookupFlightAware(ident, date)
 
+  if (await getAeroDataBoxKey()) return lookupAeroDataBox(ident, date)
+
+  // No real provider configured → deterministic demo data (free, no cost)
+  return generateStubFlight(ident, date)
+}
+
+async function lookupFlightAware(ident: string, date: string): Promise<FlightData | null> {
+  const apiKey = await getApiKey()
   const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}&end=${date}`
   // Count this billable call BEFORE the fetch (so we count even on error)
-  await incrementUsage()
+  await incrementUsage('aeroapi')
   const res = await fetch(url, {
     headers: { 'x-apikey': apiKey },
   })
@@ -103,12 +136,31 @@ export async function lookupFlight(ident: string, date: string): Promise<FlightD
 }
 
 export async function fetchFlightById(faFlightId: string): Promise<FlightData | null> {
+  // Demo flights regenerate from their encoded ident+date so their live status
+  // advances over time (the poller picks up the progression for free).
+  if (faFlightId.startsWith('STUB-')) {
+    const rest = faFlightId.slice(5) // strip "STUB-"
+    const dash = rest.lastIndexOf('-')
+    if (dash > 0) {
+      return generateStubFlight(rest.slice(0, dash), rest.slice(dash + 1))
+    }
+    return null
+  }
+
+  // AeroDataBox-tracked flights re-lookup by number + date (no stable FA id).
+  if (faFlightId.startsWith('ADB:')) {
+    const [, ident, date] = faFlightId.split(':')
+    if (ident && date) return lookupAeroDataBox(ident, date)
+    return null
+  }
+
+  // Otherwise it's a FlightAware fa_flight_id — only usable with an FA key.
   const apiKey = await getApiKey()
   if (!apiKey) return null
 
   const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(faFlightId)}`
   // Count this billable call BEFORE the fetch (so we count even on error)
-  await incrementUsage()
+  await incrementUsage('aeroapi')
   const res = await fetch(url, { headers: { 'x-apikey': apiKey } })
   if (!res.ok) return null
 
@@ -118,29 +170,3 @@ export async function fetchFlightById(faFlightId: string): Promise<FlightData | 
   return mapFlight(flights[0])
 }
 
-// Stub for dev without API key
-function stubFlight(ident: string, date: string): FlightData {
-  const base = new Date(`${date}T10:00:00Z`)
-  const arr = new Date(base.getTime() + 2 * 60 * 60 * 1000)
-  // Wheel-off ~15 min after gate departure, wheel-on ~10 min before gate arrival
-  const takeoff = new Date(base.getTime() + 15 * 60 * 1000)
-  const landing = new Date(arr.getTime() - 10 * 60 * 1000)
-  return {
-    faFlightId: `STUB-${ident}`,
-    airlineIata: ident.slice(0, 2).toUpperCase(),
-    flightNumber: ident.slice(2),
-    origin: 'JFK',
-    destination: 'LAX',
-    departureScheduled: base,
-    arrivalScheduled: arr,
-    takeoffScheduled: takeoff,
-    landingScheduled: landing,
-    status: 'scheduled',
-    gateDeparture: 'B12',
-    gateArrival: 'C4',
-    terminalDeparture: 'T2',
-    terminalArrival: 'T4',
-    aircraftType: 'B738',
-    registration: `N${ident.replace(/\D/g, '').slice(0, 3)}DN`,
-  }
-}

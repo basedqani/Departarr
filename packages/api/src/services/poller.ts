@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma.js'
 import { fetchFlightById, lookupFlight, type FlightData } from './flightAware.js'
 import { sendPushToUser, sendPushToShareSubscribers, buildPushMessage } from './webPush.js'
 import { wsClients } from '../lib/wsClients.js'
-import { isOverBudget } from '../lib/apiBudget.js'
+import { isActiveProviderOverBudget } from './flightAware.js'
 import type { Flight } from '@prisma/client'
 
 const POLL_INTERVAL_MS = 60_000
@@ -224,10 +224,11 @@ async function fetchFresh(flight: Flight): Promise<FlightData | null> {
 async function runPollCycle(): Promise<void> {
   const now = new Date()
 
-  // Budget check — skip ALL FlightAware calls if over limit
-  const overBudget = await isOverBudget()
+  // Budget check — skip ALL real provider calls if over the active provider's
+  // monthly free-tier limit (demo mode is always free, never over budget).
+  const overBudget = await isActiveProviderOverBudget()
   if (overBudget) {
-    console.warn('[poller] Monthly AeroAPI budget reached — skipping FlightAware calls this cycle')
+    console.warn('[poller] Monthly data-provider budget reached — skipping real calls this cycle')
   }
 
   // Widen upper window slightly so 12h-interval flights (>24h out) still get

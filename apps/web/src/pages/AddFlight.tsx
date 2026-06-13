@@ -63,6 +63,9 @@ export function AddFlightPage(): React.ReactElement {
                 autoCapitalize="characters"
                 style={{ textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, fontSize: '1.05rem' }}
               />
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                Airline code + number, e.g. <span style={{ fontFamily: 'monospace', color: 'var(--accent)' }}>BA178</span>, <span style={{ fontFamily: 'monospace', color: 'var(--accent)' }}>UA88</span>, <span style={{ fontFamily: 'monospace', color: 'var(--accent)' }}>NH7</span>
+              </div>
             </div>
             <div className="form-group">
               <label>Date</label>

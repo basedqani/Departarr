@@ -597,6 +597,7 @@ export function FlightDetailPage(): React.ReactElement {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [shareSheet, setShareSheet] = useState<{ url: string } | null>(null)
+  const [sharing, setSharing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [position, setPosition] = useState<AircraftPosition | null>(null)
 
@@ -664,11 +665,17 @@ export function FlightDetailPage(): React.ReactElement {
   }
 
   async function handleShare(): Promise<void> {
+    if (sharing) return
+    setSharing(true)
     try {
       const res = await api.flights.share(id!)
       const full = res.url.startsWith('/') ? `${window.location.origin}${res.url}` : res.url
       setShareSheet({ url: full })
-    } catch { /* noop */ }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not create share link')
+    } finally {
+      setSharing(false)
+    }
   }
 
   return (
@@ -765,8 +772,8 @@ export function FlightDetailPage(): React.ReactElement {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
-            <button className="secondary" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => void handleShare()}>
-              Share
+            <button className="secondary" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => void handleShare()} disabled={sharing}>
+              {sharing ? 'Sharing…' : 'Share'}
             </button>
             <button className="danger" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => void handleDelete()} disabled={deleting}>
               Delete

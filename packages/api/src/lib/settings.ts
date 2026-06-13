@@ -2,11 +2,13 @@ import { prisma } from './prisma.js'
 
 export const RECOGNIZED_KEYS = [
   'flightaware_api_key',
+  'aerodatabox_api_key',
   'google_client_id',
   'google_client_secret',
   'vapid_subject',
   'allow_registration',
   'aeroapi_monthly_budget',
+  'aerodatabox_monthly_budget',
 ] as const
 
 export type SettingKey = (typeof RECOGNIZED_KEYS)[number]

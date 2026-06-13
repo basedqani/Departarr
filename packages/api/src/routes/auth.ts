@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { authMiddleware } from '../middleware/auth.js'
-import { getSetting } from '../lib/settings.js'
+import { getSetting, getSettingWithEnvFallback } from '../lib/settings.js'
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -81,6 +81,19 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     } catch {
       return reply.code(401).send({ error: 'Invalid token' })
     }
+
+    // Graceful degradation: if the admin hasn't configured Google OAuth, send
+    // the user back to Settings with a friendly flag instead of bouncing them
+    // to Google's "Access blocked: missing client_id" error page.
+    const clientId = await getSettingWithEnvFallback('google_client_id', 'GOOGLE_CLIENT_ID')
+    const clientSecret = await getSettingWithEnvFallback('google_client_secret', 'GOOGLE_CLIENT_SECRET')
+    if (!clientId || !clientSecret) {
+      const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'http'
+      const host = req.headers.host ?? 'localhost'
+      const appUrl = process.env.APP_URL ?? `${proto}://${host}`
+      return reply.redirect(`${appUrl}/settings?calendar=not_configured`)
+    }
+
     const { getGoogleOAuthUrl } = await import('../services/googleCalendar.js')
     return reply.redirect(await getGoogleOAuthUrl(token, req))
   })

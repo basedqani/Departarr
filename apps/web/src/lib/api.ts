@@ -110,6 +110,18 @@ export const api = {
     set: (key: string, value: string) =>
       request<{ ok: boolean }>('/settings', { method: 'PUT', body: JSON.stringify({ key, value }) }),
   },
+
+  features: {
+    get: () => request<Features>('/features'),
+  },
+}
+
+export interface Features {
+  googleCalendar: boolean
+  flightAware: boolean
+  aeroDataBox: boolean
+  liveData: boolean
+  provider: string
 }
 
 // Types

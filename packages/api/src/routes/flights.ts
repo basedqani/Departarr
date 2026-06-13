@@ -140,9 +140,13 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     const flight = await prisma.flight.findFirst({ where: { id, userId } })
     if (!flight) return reply.code(404).send({ error: 'Flight not found' })
 
-    if (!flight.registration) return reply.code(404).send({ error: 'No registration available' })
+    // Demo flights aren't real aircraft — skip the (heavy) OpenSky scan; the
+    // client synthesises their position along the great-circle arc by time.
+    if (flight.faFlightId?.startsWith('STUB-')) {
+      return reply.code(404).send({ error: 'Position not available' })
+    }
 
-    const position = await getAircraftPosition(flight.registration)
+    const position = await getAircraftPosition({ ident: flight.ident, registration: flight.registration })
     if (!position) return reply.code(404).send({ error: 'Position not available' })
 
     return reply.send(position)
