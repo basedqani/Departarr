@@ -69,15 +69,19 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
     refresh_token: connection.refreshToken,
   })
 
-  // Auto-refresh tokens
-  oauth2Client.on('tokens', async (tokens) => {
-    await prisma.calendarConnection.update({
-      where: { id: connection.id },
-      data: {
-        accessToken: tokens.access_token ?? connection.accessToken,
-        expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : connection.expiresAt,
-      },
-    })
+  // Auto-refresh tokens — persist new access token as it's rotated. Wrap in a
+  // try/catch so a write failure here never aborts the whole sync.
+  oauth2Client.on('tokens', (tokens) => {
+    prisma.calendarConnection
+      .update({
+        where: { id: connection.id },
+        data: {
+          accessToken: tokens.access_token ?? connection.accessToken,
+          refreshToken: tokens.refresh_token ?? connection.refreshToken,
+          expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : connection.expiresAt,
+        },
+      })
+      .catch((err) => console.error(`Failed to persist refreshed Google token for user ${userId}:`, err))
   })
 
   const calendar = google.calendar({ version: 'v3', auth: oauth2Client })
@@ -89,75 +93,130 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
   let pageToken: string | undefined
   let flightsAdded = 0
 
-  do {
-    const res = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin,
-      timeMax,
-      maxResults: 250,
-      singleEvents: true,
-      orderBy: 'startTime',
-      pageToken,
-    })
-
-    const events = res.data.items ?? []
-
-    for (const event of events) {
-      const detected = detectFlightsInEvent({
-        summary: event.summary,
-        description: event.description,
-        location: event.location,
+  try {
+    do {
+      const res = await calendar.events.list({
+        calendarId: 'primary',
+        timeMin,
+        timeMax,
+        maxResults: 250,
+        singleEvents: true,
+        orderBy: 'startTime',
+        pageToken,
       })
 
-      for (const flight of detected) {
-        const start = event.start
-        if (!start) continue
-        const date = extractEventDate(start as { date?: string; dateTime?: string })
-        if (!date) continue
+      const events = res.data.items ?? []
 
-        // Skip if already tracked
-        const existing = await prisma.flight.findFirst({
-          where: { userId, ident: flight.ident, departureScheduled: { gte: new Date(`${date}T00:00:00Z`), lt: new Date(`${date}T23:59:59Z`) } },
-        })
-        if (existing) continue
-
+      for (const event of events) {
+        // Never let a single malformed event abort the whole sync.
         try {
-          const flightData = await lookupFlight(flight.ident, date)
-          if (!flightData) continue
-
-          await prisma.flight.create({
-            data: {
-              userId,
-              ident: flight.ident,
-              faFlightId: flightData.faFlightId ?? null,
-              airlineIata: flightData.airlineIata ?? null,
-              flightNumber: flightData.flightNumber ?? null,
-              origin: flightData.origin,
-              destination: flightData.destination,
-              departureScheduled: flightData.departureScheduled,
-              departureEstimated: flightData.departureEstimated ?? null,
-              arrivalScheduled: flightData.arrivalScheduled,
-              arrivalEstimated: flightData.arrivalEstimated ?? null,
-              status: flightData.status,
-              gateDeparture: flightData.gateDeparture ?? null,
-              gateArrival: flightData.gateArrival ?? null,
-              terminalDeparture: flightData.terminalDeparture ?? null,
-              terminalArrival: flightData.terminalArrival ?? null,
-              baggageClaim: flightData.baggageClaim ?? null,
-              aircraftType: flightData.aircraftType ?? null,
-              registration: flightData.registration ?? null,
-              lastPolledAt: new Date(),
-            },
+          const detected = detectFlightsInEvent({
+            summary: event.summary,
+            description: event.description,
+            location: event.location,
           })
-          flightsAdded++
+
+          for (const flight of detected) {
+            const start = event.start
+            if (!start) continue
+            const date = extractEventDate(start as { date?: string; dateTime?: string })
+            if (!date) continue
+
+            // Skip if already tracked (dedup against existing flights).
+            const existing = await prisma.flight.findFirst({
+              where: {
+                userId,
+                ident: flight.ident,
+                departureScheduled: {
+                  gte: new Date(`${date}T00:00:00Z`),
+                  lt: new Date(`${date}T23:59:59Z`),
+                },
+              },
+            })
+            if (existing) continue
+
+            try {
+              const flightData = await lookupFlight(flight.ident, date)
+              if (!flightData) continue
+
+              await prisma.flight.create({
+                data: {
+                  userId,
+                  ident: flight.ident,
+                  faFlightId: flightData.faFlightId ?? null,
+                  airlineIata: flightData.airlineIata ?? null,
+                  flightNumber: flightData.flightNumber ?? null,
+                  origin: flightData.origin,
+                  destination: flightData.destination,
+                  departureScheduled: flightData.departureScheduled,
+                  departureEstimated: flightData.departureEstimated ?? null,
+                  arrivalScheduled: flightData.arrivalScheduled,
+                  arrivalEstimated: flightData.arrivalEstimated ?? null,
+                  status: flightData.status,
+                  gateDeparture: flightData.gateDeparture ?? null,
+                  gateArrival: flightData.gateArrival ?? null,
+                  terminalDeparture: flightData.terminalDeparture ?? null,
+                  terminalArrival: flightData.terminalArrival ?? null,
+                  baggageClaim: flightData.baggageClaim ?? null,
+                  aircraftType: flightData.aircraftType ?? null,
+                  registration: flightData.registration ?? null,
+                  lastPolledAt: new Date(),
+                },
+              })
+              flightsAdded++
+            } catch (err) {
+              console.error(`Failed to add flight ${flight.ident} from calendar:`, err)
+            }
+          }
         } catch (err) {
-          console.error(`Failed to add flight ${flight.ident} from calendar:`, err)
+          console.error(`Failed to process calendar event ${event.id ?? '(unknown)'}:`, err)
         }
       }
-    }
 
-    pageToken = res.data.nextPageToken ?? undefined
-  } while (pageToken)
+      pageToken = res.data.nextPageToken ?? undefined
+    } while (pageToken)
+  } catch (err) {
+    // Likely a token-refresh / auth failure (e.g. revoked refresh token) or an
+    // API outage. Record the failure but do not throw so the scheduler keeps
+    // serving other users.
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`Calendar sync failed for user ${userId}:`, msg)
+    await recordSyncResult(userId, flightsAdded, msg)
+    return flightsAdded
+  }
 
+  await recordSyncResult(userId, flightsAdded, null)
   return flightsAdded
+}
+
+/**
+ * Persist last-sync metadata per user in the Setting table. We write directly
+ * via prisma.setting.upsert (rather than setSetting) because these keys are
+ * dynamic per-user and not part of the typed RECOGNIZED_KEYS set.
+ */
+async function recordSyncResult(
+  userId: string,
+  count: number,
+  error: string | null
+): Promise<void> {
+  const now = new Date().toISOString()
+  try {
+    await prisma.setting.upsert({
+      where: { key: `calendar_last_sync_${userId}` },
+      create: { key: `calendar_last_sync_${userId}`, value: now },
+      update: { value: now },
+    })
+    await prisma.setting.upsert({
+      where: { key: `calendar_last_count_${userId}` },
+      create: { key: `calendar_last_count_${userId}`, value: String(count) },
+      update: { value: String(count) },
+    })
+    await prisma.setting.upsert({
+      where: { key: `calendar_last_error_${userId}` },
+      create: { key: `calendar_last_error_${userId}`, value: error ?? '' },
+      update: { value: error ?? '' },
+    })
+  } catch (err) {
+    console.error(`Failed to record calendar sync metadata for user ${userId}:`, err)
+  }
 }

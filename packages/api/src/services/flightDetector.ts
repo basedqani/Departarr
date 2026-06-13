@@ -9,38 +9,86 @@ export interface DetectedFlight {
 }
 
 // Regex matching airline codes (IATA 2-char: letters, or mixed letter+digit)
-// followed by optional space and 1-4 digit flight number
-const FLIGHT_IDENT_RE = /\b([A-Z]{2}|[A-Z]\d|\d[A-Z])\s?(\d{1,4})\b/g
+// optionally preceded by the word "flight", followed by optional space and a
+// 1-4 digit flight number. The leading boundary requires the char before the
+// code to be a non-alphanumeric so we don't slice the tail off a longer word.
+const FLIGHT_IDENT_RE = /(?<![A-Z0-9])([A-Z]{2}|[A-Z]\d|\d[A-Z])\s?(\d{1,4})(?![A-Z0-9])/g
 
-// Keywords that suggest a travel/flight context
+// Keywords that suggest a travel/flight context.
 const FLIGHT_KEYWORDS = [
-  'flight', 'fly', 'depart', 'arrive', 'airline', 'airport',
-  'boarding', 'gate', 'terminal', 'layover', 'connection',
-  'itinerary', 'confirmation', 'travel',
+  'flight', 'fly', 'depart', 'arrive', 'arrival', 'airline', 'airport',
+  'boarding', 'gate', 'terminal', 'layover', 'connection', 'connecting',
+  'itinerary', 'confirmation', 'travel', 'nonstop', 'pnr', 'seat',
 ]
 
-// Common IATA airport codes to help confirm context
-const AIRPORT_CODE_RE = /\b([A-Z]{3})\b/g
+// Airport-looking codes: a 3-letter token that is a standalone word.
+const AIRPORT_CODE_RE = /\b[A-Z]{3}\b/g
 
+// Common IATA airline prefixes — used as a strong positive signal.
 const KNOWN_IATA_PREFIXES = new Set([
   'AA', 'AS', 'B6', 'DL', 'F9', 'G4', 'HA', 'NK', 'SY', 'UA', 'WN', 'WS',
   'AC', 'AF', 'AZ', 'BA', 'EK', 'EY', 'IB', 'JL', 'KE', 'KL', 'LH', 'LX',
-  'NH', 'NZ', 'OS', 'QF', 'QR', 'SQ', 'SU', 'TG', 'TK', 'UA', 'VS', 'VX',
+  'NH', 'NZ', 'OS', 'QF', 'QR', 'SQ', 'SU', 'TG', 'TK', 'VS', 'VX',
   '9E', 'MQ', 'OH', 'OO', 'YV', 'YX', 'ZW',
 ])
 
+// US state abbreviations — when followed by a number these are almost always
+// addresses ("CA 90210") rather than flights, so we exclude them.
+const US_STATE_ABBR = new Set([
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID',
+  'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS',
+  'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK',
+  'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV',
+  'WI', 'WY', 'DC',
+])
+
+// Non-airline two-letter tokens that frequently precede numbers in calendars
+// but are never flight codes.
+const NOISE_PREFIXES = new Set(['ID', 'OK', 'PO', 'PM', 'AM', 'NO', 'RM'])
+
+// Tokens that, when they form the rawMatch, indicate a non-flight context such
+// as time strings ("AT 10", "BY 5"). Combined with the noise set above.
+function isLikelyFalsePositive(
+  airlineCode: string,
+  flightNumber: string,
+  isKnownAirline: boolean
+): boolean {
+  // Address-style "<STATE> <zip>" — a 5-digit number after a state abbr.
+  if (US_STATE_ABBR.has(airlineCode) && !isKnownAirline) {
+    if (flightNumber.length === 5) return true
+    // Generic state-then-number (e.g. "CA 200") is ambiguous; reject unless the
+    // code is also a known airline prefix.
+    return true
+  }
+
+  if (NOISE_PREFIXES.has(airlineCode) && !isKnownAirline) return true
+
+  // Flight numbers are 1-4 digits; a leading-zero 4-digit number like "0000"
+  // is meaningless.
+  if (/^0+$/.test(flightNumber)) return true
+
+  return false
+}
+
+// Strip clock times (e.g. "10:30", "9:05 AM", "14:00-15:30") so their digits
+// can't be mistaken for flight numbers, while preserving overall token layout.
+function stripTimeStrings(text: string): string {
+  return text.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?\b/gi, ' ')
+}
+
 export function detectFlightsInText(text: string): DetectedFlight[] {
   const results: DetectedFlight[] = []
-  const upperText = text.toUpperCase()
+  const upperText = stripTimeStrings(text.toUpperCase())
 
   const hasFlightKeyword = FLIGHT_KEYWORDS.some((kw) =>
     upperText.includes(kw.toUpperCase())
   )
 
-  // Count airport-looking codes
+  // Count airport-looking codes (3-letter standalone tokens).
   const airportMatches = [...upperText.matchAll(AIRPORT_CODE_RE)]
   const hasAirportCodes = airportMatches.length >= 2
 
+  // Require genuine flight context before extracting anything.
   if (!hasFlightKeyword && !hasAirportCodes) return results
 
   let match: RegExpExecArray | null
@@ -48,8 +96,17 @@ export function detectFlightsInText(text: string): DetectedFlight[] {
   while ((match = FLIGHT_IDENT_RE.exec(upperText)) !== null) {
     const airlineCode = match[1]
     const flightNumber = match[2]
-    // Prefer known IATA prefixes but don't require them if keywords are present
-    if (KNOWN_IATA_PREFIXES.has(airlineCode) || hasFlightKeyword) {
+    const isKnownAirline = KNOWN_IATA_PREFIXES.has(airlineCode)
+
+    if (isLikelyFalsePositive(airlineCode, flightNumber, isKnownAirline)) {
+      continue
+    }
+
+    // Accept when: the prefix is a known airline (strong signal), OR there is a
+    // genuine flight keyword in the surrounding text (so plausible but unknown
+    // carriers are still captured). Bare 2+ airport codes without a keyword are
+    // not enough to accept an *unknown* carrier code (too noisy).
+    if (isKnownAirline || hasFlightKeyword) {
       results.push({
         ident: `${airlineCode}${flightNumber}`,
         airlineCode,
@@ -59,7 +116,7 @@ export function detectFlightsInText(text: string): DetectedFlight[] {
     }
   }
 
-  // Deduplicate by ident
+  // Deduplicate by ident.
   const seen = new Set<string>()
   return results.filter((f) => {
     if (seen.has(f.ident)) return false

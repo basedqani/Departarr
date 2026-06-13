@@ -22,6 +22,7 @@ import { pushRoutes } from './routes/push.js'
 import { calendarRoutes } from './routes/calendar.js'
 import { settingsRoutes } from './routes/settings.js'
 import { startPoller } from './services/poller.js'
+import { startCalendarScheduler } from './services/calendarScheduler.js'
 import { wsClients } from './lib/wsClients.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -119,6 +120,7 @@ try {
   await app.listen({ port, host: '0.0.0.0' })
   console.log(`API listening on port ${port}`)
   startPoller()
+  startCalendarScheduler()
 } catch (err) {
   app.log.error(err)
   await prisma.$disconnect()
