@@ -1,9 +1,42 @@
+# Quick start
+#   docker compose up -d
+#   open http://localhost:8080
+#
+# Secrets (JWT, VAPID keys) are auto-generated on first boot and saved to
+# ./data/config.json — no manual setup required.
+#
+# Optional environment variables are listed below (all commented out).
+# Set them if you want to override auto-generated values or enable extra
+# features. You can also configure everything from the Settings page in the UI
+# after the container starts — no restart required.
+
 services:
   departarr:
     image: ghcr.io/basedqani/departarr:latest
-    # build: .   # uncomment to build from source
+    # build: .   # uncomment to build from source instead
     ports:
       - "8080:8080"
     volumes:
       - ./data:/data
     restart: unless-stopped
+    # environment:
+    #   # ── Secrets (auto-generated if omitted) ───────────────────────────────
+    #   JWT_SECRET: "change-me-32-random-bytes"
+    #   VAPID_PUBLIC_KEY: "..."
+    #   VAPID_PRIVATE_KEY: "..."
+    #
+    #   # ── Flight data (optional — stub data used if omitted) ────────────────
+    #   # Free tier available at https://www.flightaware.com/commercial/aeroapi
+    #   # You can also paste this key in Settings → Data Sources in the UI.
+    #   # AERO_DATA_BOX_KEY: "your-aerodatabox-key"
+    #
+    #   # ── Google Calendar OAuth (optional) ─────────────────────────────────
+    #   # Create credentials at https://console.cloud.google.com
+    #   # Redirect URI: https://YOUR_DOMAIN/api/auth/google/callback
+    #   # You can also enter these in Settings → Data Sources in the UI.
+    #   # GOOGLE_CLIENT_ID: "your-client-id.apps.googleusercontent.com"
+    #   # GOOGLE_CLIENT_SECRET: "your-client-secret"
+    #
+    #   # ── Push notifications subject (optional) ────────────────────────────
+    #   # Must be a mailto: or https: URI identifying the app operator.
+    #   # VAPID_SUBJECT: "mailto:you@example.com"
