@@ -26,6 +26,9 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 
+# Prisma needs OpenSSL and libssl on Alpine
+RUN apk add --no-cache openssl libssl3
+
 # Install only production deps
 COPY package*.json ./
 COPY packages/api/package*.json ./packages/api/
