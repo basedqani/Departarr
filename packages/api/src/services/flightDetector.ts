@@ -21,6 +21,9 @@ const FLIGHT_KEYWORDS = [
   'flight', 'fly', 'depart', 'arrive', 'arrival', 'airline', 'airport',
   'boarding', 'gate', 'terminal', 'layover', 'connection', 'connecting',
   'itinerary', 'confirmation', 'travel', 'nonstop', 'pnr', 'seat',
+  'operated by', 'carrier', 'cabin', 'economy', 'business class', 'first class',
+  'check-in', 'checkin', 'booking ref', 'reservation', 'eticket', 'e-ticket',
+  'ticket number', 'record locator',
 ]
 
 // Airport-looking codes: a 3-letter token that is a standalone word.
@@ -31,10 +34,23 @@ const ROUTE_RE = /\b([A-Z]{3})\b\s*(?:TO|→|->|–|—|›|>|-)\s*\b([A-Z]{3})\
 
 // Common IATA airline prefixes — used as a strong positive signal.
 const KNOWN_IATA_PREFIXES = new Set([
+  // North America
   'AA', 'AS', 'B6', 'DL', 'F9', 'G4', 'HA', 'NK', 'SY', 'UA', 'WN', 'WS',
-  'AC', 'AF', 'AZ', 'BA', 'EK', 'EY', 'IB', 'JL', 'KE', 'KL', 'LH', 'LX',
-  'NH', 'NZ', 'OS', 'QF', 'QR', 'SQ', 'SU', 'TG', 'TK', 'VS', 'VX',
+  'AC', 'VX',
+  // Regional/commuter US
   '9E', 'MQ', 'OH', 'OO', 'YV', 'YX', 'ZW',
+  // Europe
+  'AF', 'AZ', 'BA', 'IB', 'KL', 'LH', 'LX', 'OS', 'SU', 'VS',
+  'AY', 'BT', 'FR', 'HV', 'LO', 'OK', 'OU', 'PC', 'PS', 'RO',
+  'SK', 'SN', 'TK', 'TO', 'TP', 'U2', 'VY', 'W6',
+  // Middle East & Africa
+  'EK', 'EY', 'GF', 'MS', 'QR', 'RJ', 'AT', 'ET', 'KQ', 'SA', 'WB',
+  // Asia-Pacific
+  'AI', 'AK', 'BI', 'BR', 'CA', 'CI', 'CX', 'CZ', 'D7', 'FD',
+  'FJ', 'GA', 'JL', 'JQ', 'KE', 'MH', 'MU', 'NH', 'NZ', 'OZ',
+  'PR', 'QF', 'SQ', 'TG', 'TR', 'UL', 'VA', 'VN', 'VT',
+  // Other
+  'JP', 'PK',
 ])
 
 // US state abbreviations — when followed by a number these are almost always
@@ -49,7 +65,7 @@ const US_STATE_ABBR = new Set([
 
 // Non-airline two-letter tokens that frequently precede numbers in calendars
 // but are never flight codes.
-const NOISE_PREFIXES = new Set(['ID', 'OK', 'PO', 'PM', 'AM', 'NO', 'RM'])
+const NOISE_PREFIXES = new Set(['ID', 'PO', 'PM', 'AM', 'NO', 'RM'])
 
 // Tokens that, when they form the rawMatch, indicate a non-flight context such
 // as time strings ("AT 10", "BY 5"). Combined with the noise set above.
@@ -96,6 +112,29 @@ export function detectFlightsInText(text: string): DetectedFlight[] {
   // Require genuine flight context before extracting anything.
   if (!hasFlightKeyword && !hasAirportCodes) return results
 
+  // Collect all route matches with their positions for per-flight lookup.
+  const allRouteMatches: Array<{ index: number; origin: string; dest: string }> = []
+  const routeReGlobal = /\b([A-Z]{3})\b\s*(?:TO|→|->|–|—|›|>|-)\s*\b([A-Z]{3})\b/g
+  let rm: RegExpExecArray | null
+  while ((rm = routeReGlobal.exec(upperText)) !== null) {
+    allRouteMatches.push({ index: rm.index, origin: rm[1], dest: rm[2] })
+  }
+
+  // Helper: find the closest route match within 200 chars of a given position.
+  function closestRoute(pos: number): { origin: string; dest: string } | null {
+    let best: { index: number; origin: string; dest: string } | null = null
+    let bestDist = Infinity
+    for (const r of allRouteMatches) {
+      const dist = Math.abs(r.index - pos)
+      if (dist <= 200 && dist < bestDist) {
+        bestDist = dist
+        best = r
+      }
+    }
+    // Fall back to the first global match if nothing nearby.
+    return best ?? allRouteMatches[0] ?? null
+  }
+
   let match: RegExpExecArray | null
   FLIGHT_IDENT_RE.lastIndex = 0
   while ((match = FLIGHT_IDENT_RE.exec(upperText)) !== null) {
@@ -112,21 +151,19 @@ export function detectFlightsInText(text: string): DetectedFlight[] {
     // carriers are still captured). Bare 2+ airport codes without a keyword are
     // not enough to accept an *unknown* carrier code (too noisy).
     if (isKnownAirline || hasFlightKeyword) {
+      const route = closestRoute(match.index)
       results.push({
         ident: `${airlineCode}${flightNumber}`,
         airlineCode,
         flightNumber,
         rawMatch: match[0],
+        origin: route?.origin,
+        dest: route?.dest,
       })
     }
   }
 
-  // Extract route hint from the text (first match wins).
-  const routeMatch = ROUTE_RE.exec(upperText)
-  const routeOrigin = routeMatch?.[1]
-  const routeDest = routeMatch?.[2]
-
-  // Deduplicate by ident and attach route if found.
+  // Deduplicate by ident (route is already attached per-flight above).
   const seen = new Set<string>()
   return results
     .filter((f) => {
@@ -134,11 +171,6 @@ export function detectFlightsInText(text: string): DetectedFlight[] {
       seen.add(f.ident)
       return true
     })
-    .map((f) => ({
-      ...f,
-      origin: routeOrigin,
-      dest: routeDest,
-    }))
 }
 
 export function detectFlightsInEvent(event: {

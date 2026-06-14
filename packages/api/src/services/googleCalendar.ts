@@ -151,7 +151,32 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
                 dest: flight.dest,
                 departureUtc,
               })
-              if (!flightData) continue
+              if (!flightData) {
+                // For past flights, create a stub record from calendar data so
+                // deleted flights are restored on re-sync even when the data
+                // provider can't look them up (e.g. AeroDataBox free-tier only
+                // covers active/near-future flights).
+                const depDate = new Date(date + 'T12:00:00Z')
+                if (depDate < new Date()) {
+                  await prisma.flight.create({
+                    data: {
+                      userId,
+                      ident: flight.ident,
+                      faFlightId: null,
+                      airlineIata: flight.airlineCode ?? null,
+                      flightNumber: flight.flightNumber ?? null,
+                      origin: flight.origin ?? '',
+                      destination: flight.dest ?? '',
+                      departureScheduled: depDate,
+                      arrivalScheduled: new Date(depDate.getTime() + 2 * 60 * 60 * 1000),
+                      status: 'arrived',
+                      lastPolledAt: null,
+                    },
+                  })
+                  flightsAdded++
+                }
+                continue
+              }
 
               await prisma.flight.create({
                 data: {
