@@ -64,12 +64,14 @@ export function requiredPollIntervalMs(flight: Flight, now: Date): number {
     // Departed but not captured as in-air yet — poll fairly often
     return MIN_30
   } else if (msTilDep <= 3 * HOUR_1) {
+    // Within 3h: every 15 min — high value window for gate/delay changes
     return MIN_15
-  } else if (msTilDep <= 12 * HOUR_1) {
-    return HOUR_1
-  } else if (msTilDep <= 24 * HOUR_1) {
-    return HOUR_3
+  } else if (msTilDep <= 6 * HOUR_1) {
+    // 3–6h out: every 30 min — still worth watching
+    return MIN_30
   } else {
+    // >6h out: don't poll at all — nothing actionable changes this far out.
+    // Flight will be picked up again once it enters the 6h window.
     return HOUR_12
   }
 }

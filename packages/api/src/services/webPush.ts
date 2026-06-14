@@ -142,9 +142,11 @@ export function buildPushNotification(
     }
 
     case 'delay': {
-      // newValue is an ISO timestamp for the updated departure/arrival time
-      const timeStr = newValue ? fmtLocalTime(newValue, originIata) : null
-      const body = timeStr ? `Now departs ${timeStr}` : 'Departure time updated'
+      const oldStr = oldValue ? fmtLocalTime(oldValue, originIata) : null
+      const newStr = newValue ? fmtLocalTime(newValue, originIata) : null
+      const body = oldStr && newStr
+        ? `${oldStr} → ${newStr}`
+        : newStr ? `Now departs ${newStr}` : 'Departure time updated'
       return { title: `${ident} · Delayed`, body }
     }
 
