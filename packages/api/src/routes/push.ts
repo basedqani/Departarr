@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getConfig } from '../lib/config.js'
 import { authMiddleware } from '../middleware/auth.js'
-import { sendPushToUser } from '../services/webPush.js'
+import { sendPushToUser, sendPushToShareSubscribers } from '../services/webPush.js'
 
 const subscribeSchema = z.object({
   endpoint: z.string().url(),
