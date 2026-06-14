@@ -56,13 +56,18 @@ function computeCountdown(flight: FlightTimes): string {
   const st = flight.status.toLowerCase().replace(/[\s_]+/g, '-')
 
   const depTime = new Date(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled).getTime()
-  const arrTime = new Date(flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled).getTime()
 
   if (st === 'cancelled') return 'Cancelled'
   if (st === 'diverted') return 'Diverted'
 
-  if ((st === 'arrived' || st === 'landed') && flight.arrivalActual) {
-    return `Landed ${timeAgo(flight.arrivalActual)}`
+  const arrBest = flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled
+  const arrTime = new Date(arrBest).getTime()
+  const isCompleted =
+    st === 'arrived' ||
+    st === 'landed' ||
+    (arrTime < now && st !== 'en-route' && st !== 'departed' && st !== 'boarding')
+  if (isCompleted) {
+    return `Arrived ${timeAgo(arrBest)}`
   }
 
   if (st === 'en-route' || st === 'departed') {
@@ -91,10 +96,15 @@ function getTickInterval(flight: FlightTimes): number {
 
   // Terminal states don't need ticking
   if (st === 'cancelled' || st === 'diverted') return 0
-  if ((st === 'arrived' || st === 'landed') && flight.arrivalActual) return 0
 
   const depTime = new Date(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled).getTime()
   const arrTime = new Date(flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled).getTime()
+
+  const isCompleted =
+    st === 'arrived' ||
+    st === 'landed' ||
+    (arrTime < now && st !== 'en-route' && st !== 'departed' && st !== 'boarding')
+  if (isCompleted) return 0
 
   const relevantTime = (st === 'en-route' || st === 'departed') ? arrTime : depTime
   const diff = relevantTime - now
