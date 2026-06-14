@@ -136,7 +136,13 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
             if (existing) continue
 
             try {
-              const flightData = await lookupFlight(flight.ident, date)
+              const departureUtc =
+                (start as { date?: string; dateTime?: string }).dateTime ?? undefined
+              const flightData = await lookupFlight(flight.ident, date, {
+                origin: flight.origin,
+                dest: flight.dest,
+                departureUtc,
+              })
               if (!flightData) continue
 
               await prisma.flight.create({

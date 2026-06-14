@@ -103,11 +103,15 @@ function mapFlight(f: any): FlightData {
  *   when unconfigured, never on a "flight not found" (that returns null so the
  *   user sees an honest "couldn't find that flight" message).
  */
-export async function lookupFlight(ident: string, date: string): Promise<FlightData | null> {
+export async function lookupFlight(
+  ident: string,
+  date: string,
+  hint?: { origin?: string; dest?: string; departureUtc?: string },
+): Promise<FlightData | null> {
   const apiKey = await getApiKey()
   if (apiKey) return lookupFlightAware(ident, date)
 
-  if (await getAeroDataBoxKey()) return lookupAeroDataBox(ident, date)
+  if (await getAeroDataBoxKey()) return lookupAeroDataBox(ident, date, hint)
 
   // No real provider configured → deterministic demo data (free, no cost)
   return generateStubFlight(ident, date)
@@ -148,10 +152,18 @@ export async function fetchFlightById(faFlightId: string): Promise<FlightData | 
   }
 
   // AeroDataBox-tracked flights re-lookup by number + date (no stable FA id).
+  // Format: ADB:<ident>:<date> (legacy) OR ADB:<ident>:<date>:<ORIG>-<DEST> (new)
   if (faFlightId.startsWith('ADB:')) {
-    const [, ident, date] = faFlightId.split(':')
-    if (ident && date) return lookupAeroDataBox(ident, date)
-    return null
+    const parts = faFlightId.split(':')
+    const ident = parts[1]
+    const date = parts[2]
+    if (!ident || !date) return null
+    const legSegment = parts[3] // e.g. "ORD-MSP" or undefined
+    if (legSegment && /^[A-Z]{3}-[A-Z]{3}$/.test(legSegment)) {
+      const [origin, dest] = legSegment.split('-')
+      return lookupAeroDataBox(ident, date, { origin, dest })
+    }
+    return lookupAeroDataBox(ident, date)
   }
 
   // Otherwise it's a FlightAware fa_flight_id — only usable with an FA key.

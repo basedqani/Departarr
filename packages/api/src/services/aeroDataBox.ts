@@ -76,7 +76,7 @@ interface AdbFlight {
   arrival?: AdbEndpoint
 }
 
-function mapAdbFlight(f: AdbFlight, ident: string, date: string): FlightData | null {
+function mapAdbFlight(f: AdbFlight, ident: string, date: string, origin?: string, destination?: string): FlightData | null {
   const dep = f.departure
   const arr = f.arrival
   const depSched = parseAdbTime(dep?.scheduledTime)
@@ -101,8 +101,12 @@ function mapAdbFlight(f: AdbFlight, ident: string, date: string): FlightData | n
     ? flightNum.slice(iata.length)
     : flightNum.replace(/^[A-Z]+/, '')
 
+  // Use mapped airport codes for the stable leg id (falling back to ident if not yet known)
+  const legOrigin = origin ?? dep.airport.iata
+  const legDest = destination ?? arr.airport.iata
+
   return {
-    faFlightId: `ADB:${ident}:${date}`,
+    faFlightId: `ADB:${ident}:${date}:${legOrigin}-${legDest}`,
     airlineIata: iata,
     flightNumber: bareNumber,
     origin: dep.airport.iata,
@@ -132,8 +136,18 @@ function mapAdbFlight(f: AdbFlight, ident: string, date: string): FlightData | n
 /**
  * Look up a real flight by number + date via AeroDataBox. Returns null if no
  * key is configured or no flight is found.
+ *
+ * `hint` is used to pick the correct leg when a flight number serves multiple
+ * legs on the same day (e.g. DL2130: MSP→ORD→MSP):
+ *   1. origin+dest match → exact route match (highest priority)
+ *   2. departureUtc     → leg whose scheduled departure is closest in time
+ *   3. fallback         → leg whose departure date matches `date`, else first
  */
-export async function lookupAeroDataBox(ident: string, date: string): Promise<FlightData | null> {
+export async function lookupAeroDataBox(
+  ident: string,
+  date: string,
+  hint?: { origin?: string; dest?: string; departureUtc?: string },
+): Promise<FlightData | null> {
   const key = await getAeroDataBoxKey()
   if (!key) return null
 
@@ -163,11 +177,44 @@ export async function lookupAeroDataBox(ident: string, date: string): Promise<Fl
   const flights = Array.isArray(data) ? data : [data]
   if (flights.length === 0) return null
 
-  // Prefer the leg whose scheduled departure date matches the requested date
-  const matching = flights.find(f => {
-    const d = parseAdbTime(f.departure?.scheduledTime)
-    return d && d.toISOString().substring(0, 10) === date
-  }) ?? flights[0]
+  let matching: AdbFlight
 
-  return mapAdbFlight(matching, ident, date)
+  if (hint?.origin && hint?.dest) {
+    // Priority 1: exact route match
+    const orig = hint.origin.toUpperCase()
+    const dest = hint.dest.toUpperCase()
+    const found = flights.find(
+      (f) =>
+        f.departure?.airport?.iata?.toUpperCase() === orig &&
+        f.arrival?.airport?.iata?.toUpperCase() === dest,
+    )
+    matching = found ?? flights[0]
+  } else if (hint?.departureUtc) {
+    // Priority 2: leg closest to the calendar event's start time
+    const target = new Date(hint.departureUtc).getTime()
+    if (!isNaN(target)) {
+      let best: AdbFlight | undefined
+      let bestDiff = Infinity
+      for (const f of flights) {
+        const t = parseAdbTime(f.departure?.scheduledTime)?.getTime()
+        if (t === undefined) continue
+        const diff = Math.abs(t - target)
+        if (diff < bestDiff) { bestDiff = diff; best = f }
+      }
+      matching = best ?? flights[0]
+    } else {
+      matching = flights[0]
+    }
+  } else {
+    // Priority 3: leg whose departure date matches requested date, else first
+    matching =
+      flights.find((f) => {
+        const d = parseAdbTime(f.departure?.scheduledTime)
+        return d && d.toISOString().substring(0, 10) === date
+      }) ?? flights[0]
+  }
+
+  const depIata = matching.departure?.airport?.iata
+  const arrIata = matching.arrival?.airport?.iata
+  return mapAdbFlight(matching, ident, date, depIata, arrIata)
 }

@@ -6,6 +6,8 @@ export interface DetectedFlight {
   airlineCode: string
   flightNumber: string
   rawMatch: string
+  origin?: string
+  dest?: string
 }
 
 // Regex matching airline codes (IATA 2-char: letters, or mixed letter+digit)
@@ -23,6 +25,9 @@ const FLIGHT_KEYWORDS = [
 
 // Airport-looking codes: a 3-letter token that is a standalone word.
 const AIRPORT_CODE_RE = /\b[A-Z]{3}\b/g
+
+// Route pattern: two 3-letter codes joined by a direction token.
+const ROUTE_RE = /\b([A-Z]{3})\b\s*(?:TO|→|->|–|—|›|>|-)\s*\b([A-Z]{3})\b/
 
 // Common IATA airline prefixes — used as a strong positive signal.
 const KNOWN_IATA_PREFIXES = new Set([
@@ -116,13 +121,24 @@ export function detectFlightsInText(text: string): DetectedFlight[] {
     }
   }
 
-  // Deduplicate by ident.
+  // Extract route hint from the text (first match wins).
+  const routeMatch = ROUTE_RE.exec(upperText)
+  const routeOrigin = routeMatch?.[1]
+  const routeDest = routeMatch?.[2]
+
+  // Deduplicate by ident and attach route if found.
   const seen = new Set<string>()
-  return results.filter((f) => {
-    if (seen.has(f.ident)) return false
-    seen.add(f.ident)
-    return true
-  })
+  return results
+    .filter((f) => {
+      if (seen.has(f.ident)) return false
+      seen.add(f.ident)
+      return true
+    })
+    .map((f) => ({
+      ...f,
+      origin: routeOrigin,
+      dest: routeDest,
+    }))
 }
 
 export function detectFlightsInEvent(event: {
