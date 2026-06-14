@@ -13,8 +13,30 @@ interface Props {
   status?: string
 }
 
-// Plane SVG used as marker HTML
-const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" fill="#eaf4ff" style="filter:drop-shadow(0 0 6px #5db4ffcc)"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`
+// Plane icon for the GL symbol layer. Rendered in the map's own coordinate
+// space (unlike an HTML Marker, which mis-projects on the globe), so it always
+// sits exactly on the arc. Points "up" (north) at 0° so icon-rotate == heading.
+const PLANE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" fill="#eaf7fb" stroke="#4ec9d6" stroke-width="0.6"/></svg>`
+const PLANE_ICON_URI = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(PLANE_ICON_SVG)
+
+const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] }
+
+// Push the computed plane position into the GL 'plane' source (no-op until the
+// source exists). Setting GeoJSON data is how a symbol layer "moves".
+function applyPlane(
+  map: import('maplibre-gl').Map,
+  opts: Parameters<typeof computePlanePosition>[0],
+  arcCoords?: [number, number][] | null
+): void {
+  const src = map.getSource('plane') as { setData?: (d: unknown) => void } | undefined
+  if (!src || typeof src.setData !== 'function') return
+  const pos = computePlanePosition(opts, arcCoords)
+  if (!pos) { src.setData(EMPTY_FC); return }
+  src.setData({
+    type: 'FeatureCollection',
+    features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [pos.lon, pos.lat] }, properties: { heading: pos.heading ?? 0 } }],
+  })
+}
 
 // Recolor a default vector basemap into a premium "midnight" palette — deep
 // ocean blue, near-black land, faint glowing borders. Heuristic by layer id so
@@ -48,7 +70,6 @@ function applyPremiumTheme(map: import('maplibre-gl').Map): void {
 export function GlobeMap({ origin, destination, position, departureScheduled, arrivalScheduled, status }: Props): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('maplibre-gl').Map | null>(null)
-  const markerRef = useRef<import('maplibre-gl').Marker | null>(null)
   // Flattened great-circle coords, so the plane can ride the actual arc
   const arcCoordsRef = useRef<[number, number][] | null>(null)
   // Store the "frame the route" camera action so the recenter button re-runs it
@@ -72,7 +93,6 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
     void (async () => {
       const maplibre = await import('maplibre-gl')
       const Map = maplibre.Map
-      const Marker = maplibre.Marker
 
       if (cancelled || !containerRef.current) return
 
@@ -155,7 +175,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'flight-arc',
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                  'line-color': '#5db4ff',
+                  'line-color': '#4ec9d6',
                   'line-width': 12,
                   'line-opacity': 0.16,
                   'line-blur': 6,
@@ -163,7 +183,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
               })
             }
 
-            // Core line — bright, crisp
+            // Core line — bright, crisp teal (the "in-motion" accent)
             if (!map.getLayer('flight-arc-line')) {
               map.addLayer({
                 id: 'flight-arc-line',
@@ -171,7 +191,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'flight-arc',
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                  'line-color': '#8fd0ff',
+                  'line-color': '#7fe0ea',
                   'line-width': 2.5,
                   'line-opacity': 0.95,
                 },
@@ -200,7 +220,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'airports',
                 paint: {
                   'circle-radius': 12,
-                  'circle-color': '#5db4ff',
+                  'circle-color': '#4ec9d6',
                   'circle-opacity': 0.18,
                   'circle-blur': 1,
                 },
@@ -214,9 +234,9 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'airports',
                 paint: {
                   'circle-radius': 5,
-                  'circle-color': '#eaf4ff',
+                  'circle-color': '#eaf7fb',
                   'circle-opacity': 1,
-                  'circle-stroke-color': '#5db4ff',
+                  'circle-stroke-color': '#4ec9d6',
                   'circle-stroke-width': 2.5,
                 },
               })
@@ -263,34 +283,42 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
           }
         })()
 
-        // Plane marker
-        const planeEl = document.createElement('div')
-        planeEl.style.cssText = 'pointer-events:none;transform-origin:center center;'
-        planeEl.innerHTML = PLANE_SVG
-
-        // rotationAlignment 'map' keeps the plane pointed along its course as
-        // the camera moves; rotation must go through setRotation — writing
-        // style.transform directly would clobber MapLibre's positioning.
-        const marker = new Marker({ element: planeEl, anchor: 'center', rotationAlignment: 'map' })
-        markerRef.current = marker
-
-        // Position plane (deferred a tick so the arc coords are populated first)
-        setTimeout(() => {
+        // Plane as a GL symbol layer (projects correctly on the globe).
+        const planeImg = new Image(48, 48)
+        planeImg.onload = () => {
           if (cancelled) return
-          const planePos = computePlanePosition({ origin, destination, position, departureScheduled, arrivalScheduled, status }, arcCoordsRef.current)
-          if (planePos) {
-            marker.setLngLat([planePos.lon, planePos.lat])
-            if (planePos.heading !== undefined) marker.setRotation(planePos.heading)
-            marker.addTo(map)
+          try {
+            if (!map.hasImage('plane-icon')) map.addImage('plane-icon', planeImg)
+            if (!map.getSource('plane')) map.addSource('plane', { type: 'geojson', data: EMPTY_FC })
+            if (!map.getLayer('plane-symbol')) {
+              map.addLayer({
+                id: 'plane-symbol',
+                type: 'symbol',
+                source: 'plane',
+                layout: {
+                  'icon-image': 'plane-icon',
+                  'icon-size': 0.62,
+                  'icon-rotate': ['get', 'heading'],
+                  'icon-rotation-alignment': 'map',
+                  'icon-allow-overlap': true,
+                  'icon-ignore-placement': true,
+                },
+              })
+            }
+            // Initial placement (deferred so arc coords are populated first).
+            setTimeout(() => {
+              if (!cancelled) applyPlane(map, { origin, destination, position, departureScheduled, arrivalScheduled, status }, arcCoordsRef.current)
+            }, 0)
+          } catch {
+            // ignore — map may be tearing down
           }
-        }, 0)
+        }
+        planeImg.src = PLANE_ICON_URI
       })
     })()
 
     return () => {
       cancelled = true
-      markerRef.current?.remove()
-      markerRef.current = null
       mapRef.current?.remove()
       mapRef.current = null
     }
@@ -302,14 +330,8 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
   useEffect(() => {
     const place = (): void => {
       const map = mapRef.current
-      const marker = markerRef.current
-      if (!map || !marker) return
-      const planePos = computePlanePosition({ origin, destination, position, departureScheduled, arrivalScheduled, status }, arcCoordsRef.current)
-      if (planePos) {
-        marker.setLngLat([planePos.lon, planePos.lat])
-        if (planePos.heading !== undefined) marker.setRotation(planePos.heading)
-        marker.addTo(map)
-      }
+      if (!map) return
+      applyPlane(map, { origin, destination, position, departureScheduled, arrivalScheduled, status }, arcCoordsRef.current)
     }
     place()
 
