@@ -104,6 +104,7 @@ export const api = {
     unsubscribe: (endpoint: string) =>
       request<void>('/push/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint }) }),
     test: () => request<{ ok: boolean }>('/push/test', { method: 'POST' }),
+    simulate: (flightId: string) => request<{ ok: boolean; steps: number; totalMs: number }>(`/push/simulate/${flightId}`, { method: 'POST' }),
   },
 
   calendar: {

@@ -53,4 +53,77 @@ export async function pushRoutes(app: FastifyInstance): Promise<void> {
     await prisma.pushSubscription.deleteMany({ where: { endpoint } })
     return reply.code(204).send()
   })
+
+  // POST /api/push/simulate/:flightId — fire the full flight lifecycle as push
+  // notifications so you can test background delivery with the app closed.
+  // Sends: boarding → gate → departed → en-route → landed → baggage claim
+  app.post('/simulate/:flightId', { preHandler: authMiddleware }, async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const { flightId } = req.params as { flightId: string }
+
+    const flight = await prisma.flight.findFirst({ where: { id: flightId, userId } })
+    if (!flight) return reply.code(404).send({ error: 'Flight not found' })
+
+    const ident = flight.ident
+    const origin = flight.origin
+    const dest = flight.destination
+
+    const steps: Array<{ delayMs: number; eventType: string; title: string; message: string }> = [
+      {
+        delayMs: 0,
+        eventType: 'status_change',
+        title: `${ident} · Now Boarding`,
+        message: `Flight ${ident} (${origin} → ${dest}) is now boarding. Head to your gate.`,
+      },
+      {
+        delayMs: 5_000,
+        eventType: 'gate_change',
+        title: `${ident} · Gate Assigned`,
+        message: `Your gate is B12. Boarding closes in 15 minutes.`,
+      },
+      {
+        delayMs: 10_000,
+        eventType: 'departure',
+        title: `${ident} · Departed`,
+        message: `Flight ${ident} has pushed back from ${origin}. Wheels up shortly.`,
+      },
+      {
+        delayMs: 15_000,
+        eventType: 'status_change',
+        title: `${ident} · En Route`,
+        message: `${ident} is airborne and cruising to ${dest}. Estimated arrival on time.`,
+      },
+      {
+        delayMs: 20_000,
+        eventType: 'arrival',
+        title: `${ident} · Landed`,
+        message: `Flight ${ident} has landed at ${dest}. Welcome!`,
+      },
+      {
+        delayMs: 25_000,
+        eventType: 'baggage',
+        title: `${ident} · Baggage`,
+        message: `Baggage for flight ${ident} will be at carousel 4.`,
+      },
+    ]
+
+    // Fire in background — don't block the response
+    ;(async () => {
+      for (const step of steps) {
+        await new Promise<void>(resolve => setTimeout(resolve, step.delayMs))
+        const payload = {
+          type: 'flight_update',
+          flightId: flight.id,
+          ident,
+          eventType: step.eventType,
+          title: step.title,
+          message: step.message,
+        }
+        await sendPushToUser(userId, payload)
+        await sendPushToShareSubscribers(flightId, payload)
+      }
+    })().catch(console.error)
+
+    return reply.send({ ok: true, steps: steps.length, totalMs: 25_000 })
+  })
 }

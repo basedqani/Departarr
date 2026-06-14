@@ -191,6 +191,9 @@ export function SettingsPage(): React.ReactElement {
   const [pushSuccess, setPushSuccess] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [simFlightId, setSimFlightId] = useState('')
+  const [simRunning, setSimRunning] = useState(false)
+  const [simMessage, setSimMessage] = useState<string | null>(null)
 
   // Detect an existing push subscription on mount so "Enabled" persists across reloads
   useEffect(() => {
@@ -206,6 +209,7 @@ export function SettingsPage(): React.ReactElement {
   const calendarStatus = searchParams.get('calendar')
 
   const { data: user } = useQuery({ queryKey: ['me'], queryFn: api.auth.me, staleTime: 0, refetchOnMount: 'always' })
+  const { data: allFlights } = useQuery({ queryKey: ['flights'], queryFn: () => api.flights.list() })
 
   // Public: which integrations the admin has configured
   const { data: features } = useQuery({
@@ -400,6 +404,49 @@ export function SettingsPage(): React.ReactElement {
             </button>
           )}
         </div>
+
+        {pushSuccess && allFlights && allFlights.length > 0 && (
+          <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem' }}>
+            <div>
+              <div className="settings-row-label">Simulate flight lifecycle</div>
+              <div className="settings-row-sub">
+                Fires 6 push notifications over ~25 seconds — boarding → gate → departed → en route → landed → baggage.
+                Close the app first so you see them as real background notifications.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <select
+                value={simFlightId}
+                onChange={e => { setSimFlightId(e.target.value); setSimMessage(null) }}
+                style={{ flex: 1, fontSize: '0.82rem', padding: '0.4rem 0.6rem', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: '0.5rem', color: 'var(--text)' }}
+              >
+                <option value="">Pick a flight…</option>
+                {allFlights.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.ident} · {f.origin}→{f.destination}
+                  </option>
+                ))}
+              </select>
+              <button
+                disabled={!simFlightId || simRunning}
+                onClick={() => {
+                  setSimRunning(true)
+                  setSimMessage(null)
+                  api.push.simulate(simFlightId)
+                    .then(() => setSimMessage('Simulation started — 6 notifications will arrive over 25 seconds.'))
+                    .catch(err => setSimMessage(err instanceof Error ? err.message : 'Failed'))
+                    .finally(() => setSimRunning(false))
+                }}
+                style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+              >
+                {simRunning ? 'Starting…' : 'Simulate'}
+              </button>
+            </div>
+            {simMessage && (
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', paddingBottom: '0.25rem' }}>{simMessage}</div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Calendar */}
