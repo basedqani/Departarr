@@ -69,10 +69,14 @@ export const api = {
       if (!res.ok) return null
       return res.json() as Promise<AircraftPhoto>
     },
+    connections: () =>
+      request<ConnectionResult[]>('/flights/connections'),
     share: (id: string) =>
       request<{ token: string; url: string }>(`/flights/${id}/share`, { method: 'POST' }),
     revokeShare: (id: string) =>
       request<void>(`/flights/${id}/share`, { method: 'DELETE' }),
+    weather: (id: string) =>
+      request<WeatherResult>(`/flights/${id}/weather`),
   },
 
   trips: {
@@ -245,4 +249,20 @@ export interface AircraftPosition {
 export interface PushSubscriptionJSON {
   endpoint: string
   keys: { p256dh: string; auth: string }
+}
+
+export interface WeatherResult {
+  airport: string
+  arrivalTime: string
+  weather: { time: string; temp: number; code: number; wind: number; precip: number }[]
+}
+
+export interface ConnectionResult {
+  flightId: string
+  inboundFlightId: string
+  minutesAvailable: number
+  risk: 'green' | 'yellow' | 'red'
+  arrivalTime: string
+  departureTime: string
+  airport: string
 }

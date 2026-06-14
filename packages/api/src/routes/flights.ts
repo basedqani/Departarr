@@ -4,6 +4,8 @@ import { prisma } from '../lib/prisma.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { lookupFlight, lookupAllFlightLegs } from '../services/flightAware.js'
 import { getAircraftPosition } from '../services/openSky.js'
+import { analyseConnections } from '../services/connectionAssistant.js'
+import { AIRPORT_COORDS } from '../data/airports.js'
 
 const addFlightSchema = z.object({
   ident: z.string().min(2).max(10).toUpperCase(),
@@ -64,6 +66,23 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
       include: { trip: { select: { id: true, name: true } } },
     })
     return reply.send(flights)
+  })
+
+  // GET /api/flights/connections — analyse connection risk for upcoming flights
+  app.get('/flights/connections', async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+
+    const flights = await prisma.flight.findMany({
+      where: {
+        userId,
+        departureScheduled: { gte: twoDaysAgo },
+      },
+      orderBy: { departureScheduled: 'asc' },
+    })
+
+    const results = analyseConnections(flights)
+    return reply.send(results)
   })
 
   // GET /api/flights/lookup — preview a flight WITHOUT saving it, so the user
@@ -204,6 +223,65 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
       },
     })
     return reply.send(updated)
+  })
+
+  // GET /api/flights/:id/weather — Open-Meteo forecast around arrival time
+  app.get('/flights/:id/weather', async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const { id } = req.params as { id: string }
+
+    const flight = await prisma.flight.findFirst({ where: { id, userId } })
+    if (!flight) return reply.code(404).send({ error: 'Flight not found' })
+
+    const coords = AIRPORT_COORDS[flight.destination.toUpperCase()]
+    if (!coords) return reply.code(404).send({ error: 'Airport not in database' })
+
+    const arrivalTime = flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled
+    if (!arrivalTime) return reply.code(404).send({ error: 'No arrival time available' })
+
+    const [lat, lon] = coords
+
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 8000)
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weathercode,windspeed_10m,precipitation&timezone=auto&forecast_days=3`
+      const res = await fetch(url, { signal: controller.signal })
+      clearTimeout(timer)
+
+      if (!res.ok) return reply.code(502).send({ error: 'Weather service unavailable' })
+
+      const json = await res.json() as {
+        hourly: {
+          time: string[]
+          temperature_2m: number[]
+          weathercode: number[]
+          windspeed_10m: number[]
+          precipitation: number[]
+        }
+      }
+
+      const arrMs = new Date(arrivalTime).getTime()
+      const WINDOW_MS = 1.5 * 60 * 60 * 1000 // ±1.5h
+
+      const slots = json.hourly.time
+        .map((t, i) => ({
+          time: t,
+          temp: json.hourly.temperature_2m[i],
+          code: json.hourly.weathercode[i],
+          wind: json.hourly.windspeed_10m[i],
+          precip: json.hourly.precipitation[i],
+          diffMs: Math.abs(new Date(t).getTime() - arrMs),
+        }))
+        .filter(s => s.diffMs <= WINDOW_MS)
+        .sort((a, b) => a.diffMs - b.diffMs)
+        .slice(0, 3)
+        .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+        .map(({ time, temp, code, wind, precip }) => ({ time, temp, code, wind, precip }))
+
+      return reply.send({ airport: flight.destination, arrivalTime, weather: slots })
+    } catch {
+      return reply.code(502).send({ error: 'Weather service unavailable' })
+    }
   })
 
   // GET /api/flights/:id/photo — planespotters aircraft photo proxy

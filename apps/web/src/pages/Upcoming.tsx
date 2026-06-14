@@ -1,9 +1,30 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { api, type Flight } from '../lib/api'
+import { api, type Flight, type ConnectionResult } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
 import { formatDate } from '../lib/format'
+
+function ConnectionBadge({ conn }: { conn: ConnectionResult }): React.ReactElement {
+  const color = conn.risk === 'red' ? '#e53e3e' : '#d69e2e'
+  const icon = conn.risk === 'red' ? '⚠️' : '⏱'
+  const mins = conn.minutesAvailable
+  return (
+    <div
+      className="connection-badge"
+      style={
+        {
+          '--badge-color': color,
+          background: conn.risk === 'red' ? 'rgba(229,62,62,0.12)' : 'rgba(214,158,46,0.12)',
+          border: `1px solid ${conn.risk === 'red' ? 'rgba(229,62,62,0.35)' : 'rgba(214,158,46,0.35)'}`,
+        } as React.CSSProperties
+      }
+    >
+      {icon} {mins}m connection at {conn.airport}
+      {conn.risk === 'red' ? ' — AT RISK' : ' — Tight'}
+    </div>
+  )
+}
 
 function daysUntil(dateStr: string): number {
   const dep = new Date(dateStr)
@@ -41,6 +62,12 @@ export function UpcomingPage(): React.ReactElement {
   const { data: trips } = useQuery({
     queryKey: ['trips'],
     queryFn: api.trips.list,
+  })
+
+  const { data: connections } = useQuery({
+    queryKey: ['connections'],
+    queryFn: api.flights.connections,
+    refetchInterval: 60_000,
   })
 
   const groups = flights ? groupByDate(flights) : new Map<string, Flight[]>()
@@ -100,9 +127,15 @@ export function UpcomingPage(): React.ReactElement {
             {formatDate(dateKey)}
             <span className="countdown-chip">{countdownLabel(groupFlights[0].departureScheduled)}</span>
           </div>
-          {groupFlights.map((f, i) => (
-            <FlightCard key={f.id} flight={f} index={groupIdx * 10 + i} />
-          ))}
+          {groupFlights.map((f, i) => {
+            const conn = connections?.find(c => c.flightId === f.id)
+            return (
+              <div key={f.id}>
+                <FlightCard flight={f} index={groupIdx * 10 + i} />
+                {conn && conn.risk !== 'green' && <ConnectionBadge conn={conn} />}
+              </div>
+            )
+          })}
         </div>
       ))}
     </motion.div>
