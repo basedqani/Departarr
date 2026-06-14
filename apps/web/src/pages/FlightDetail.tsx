@@ -301,6 +301,15 @@ function ShareSheet({ url, flightId, flightIdent, onClose }: ShareSheetProps): R
   const [copied, setCopied] = useState(false)
   const [revoking, setRevoking] = useState(false)
 
+  // Close on Escape key
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   async function doCopy(): Promise<void> {
     await navigator.clipboard.writeText(url)
     setCopied(true)
@@ -332,21 +341,49 @@ function ShareSheet({ url, flightId, flightIdent, onClose }: ShareSheetProps): R
   const hasNativeShare = 'share' in navigator
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200 }}>
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        background: 'rgba(0,0,0,0.5)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)' as React.CSSProperties['backdropFilter'],
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
-        onClick={onClose}
-        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' as React.CSSProperties['backdropFilter'] }}
-      />
-      <motion.div
-        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 380, damping: 38 }}
-        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: `1.25rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom, 0px))`, boxShadow: '0 -8px 40px rgba(0,0,0,0.5)' }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--surface)',
+          borderRadius: 16,
+          padding: '1.5rem',
+          width: 'min(90vw, 420px)',
+          maxHeight: '80vh',
+          overflowY: 'auto',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+        }}
       >
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 1.25rem' }} />
-        <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text)' }}>
-          Share {flightIdent}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text)' }}>
+            Share {flightIdent}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0.25rem', lineHeight: 1 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
         </div>
         <div style={{ background: 'var(--surface-raised)', borderRadius: 10, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.78rem', fontFamily: 'monospace', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
           {url}
@@ -374,7 +411,7 @@ function ShareSheet({ url, flightId, flightIdent, onClose }: ShareSheetProps): R
           {revoking ? 'Revoking…' : 'Revoke link'}
         </button>
       </motion.div>
-    </div>
+    </motion.div>
   )
 }
 
