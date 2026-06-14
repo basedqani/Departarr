@@ -1,13 +1,17 @@
 self.addEventListener('push', (event) => {
   let data = {}
   try { data = event.data ? event.data.json() : {} } catch (e) {}
+  // title is always set by the server (e.g. "AA 2083 · Departed")
   const title = data.title || 'Departarr'
+  // message is the terse body line; empty string is valid (status-only events)
+  const body = typeof data.message === 'string' ? data.message : 'Flight update'
   const options = {
-    body: data.message || 'Flight update',
+    body,
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    tag: data.flightId || 'departarr',
-    data: data,
+    tag: data.flightId ? `flight-${data.flightId}-${data.eventType || 'update'}` : 'departarr',
+    renotify: true,
+    data,
   }
   event.waitUntil(self.registration.showNotification(title, options))
 })

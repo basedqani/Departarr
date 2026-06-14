@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js'
 import { fetchFlightById, lookupFlight, type FlightData } from './flightAware.js'
-import { sendPushToUser, sendPushToShareSubscribers, buildPushMessage } from './webPush.js'
+import { sendPushToUser, sendPushToShareSubscribers, buildPushNotification } from './webPush.js'
 import { wsClients } from '../lib/wsClients.js'
 import { isActiveProviderOverBudget } from './flightAware.js'
 import type { Flight } from '@prisma/client'
@@ -186,13 +186,21 @@ async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> 
 
   // Notify via push + WebSocket
   for (const d of diffs) {
-    const msg = buildPushMessage(d.eventType, d.oldValue, d.newValue)
+    const notif = buildPushNotification(
+      d.eventType,
+      flight.ident,
+      d.oldValue,
+      d.newValue,
+      flight.origin ?? null,
+      flight.destination ?? null,
+    )
     const pushPayload = {
       type: 'flight_update',
       flightId: flight.id,
       ident: flight.ident,
       eventType: d.eventType,
-      message: msg,
+      title: notif.title,
+      message: notif.body,
     }
     await sendPushToUser(flight.userId, pushPayload)
     await sendPushToShareSubscribers(flight.id, pushPayload)
@@ -203,7 +211,8 @@ async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> 
       eventType: d.eventType,
       oldValue: d.oldValue,
       newValue: d.newValue,
-      message: msg,
+      title: notif.title,
+      message: notif.body,
     })
   }
 }

@@ -41,7 +41,7 @@ export async function pushRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/push/test
   app.post('/test', { preHandler: authMiddleware }, async (req, reply) => {
     const userId = (req.user as { id: string }).id
-    await sendPushToUser(userId, { title: 'Departarr ✈️', message: 'Push notifications are working!', eventType: 'test' })
+    await sendPushToUser(userId, { title: 'Departarr · Test', message: 'Push notifications are working ✓', eventType: 'test' })
     return reply.send({ ok: true })
   })
 
@@ -73,37 +73,37 @@ export async function pushRoutes(app: FastifyInstance): Promise<void> {
         delayMs: 0,
         eventType: 'status_change',
         title: `${ident} · Now Boarding`,
-        message: `Flight ${ident} (${origin} → ${dest}) is now boarding. Head to your gate.`,
+        message: `Gate B12 · ${origin} → ${dest}`,
       },
       {
         delayMs: 5_000,
         eventType: 'gate_change',
-        title: `${ident} · Gate Assigned`,
-        message: `Your gate is B12. Boarding closes in 15 minutes.`,
+        title: `${ident} · Gate Change`,
+        message: `Gate B12 → C7`,
       },
       {
         delayMs: 10_000,
         eventType: 'departure',
         title: `${ident} · Departed`,
-        message: `Flight ${ident} has pushed back from ${origin}. Wheels up shortly.`,
+        message: `Pushed back from ${origin}`,
       },
       {
         delayMs: 15_000,
         eventType: 'status_change',
         title: `${ident} · En Route`,
-        message: `${ident} is airborne and cruising to ${dest}. Estimated arrival on time.`,
+        message: `Cruising to ${dest}`,
       },
       {
         delayMs: 20_000,
         eventType: 'arrival',
         title: `${ident} · Landed`,
-        message: `Flight ${ident} has landed at ${dest}. Welcome!`,
+        message: `Arrived at ${dest}`,
       },
       {
         delayMs: 25_000,
         eventType: 'baggage',
         title: `${ident} · Baggage`,
-        message: `Baggage for flight ${ident} will be at carousel 4.`,
+        message: `Carousel 4`,
       },
     ]
 
