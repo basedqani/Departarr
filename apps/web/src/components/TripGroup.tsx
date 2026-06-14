@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import type { TripGroupItem, InlineConnection } from '../lib/tripGrouping'
+import type { TripGroupItem, InlineConnection, TripLeg } from '../lib/tripGrouping'
+import { legId } from '../lib/tripGrouping'
 import { FlightCard } from './FlightCard'
+import { TrainCard } from './TrainCard'
 
 function ConnectionRow({ conn }: { conn: InlineConnection }): React.ReactElement {
   const palettes = {
@@ -65,9 +67,12 @@ export function TripGroup({
         ✈ {group.tripName} · {group.legs.length} leg{group.legs.length > 1 ? 's' : ''}
       </Link>
       <div className="trip-group-body">
-        {group.legs.map((leg, i) => (
-          <div key={leg.id}>
-            <FlightCard flight={leg} index={startIndex} />
+        {group.legs.map((leg: TripLeg, i) => (
+          <div key={legId(leg)}>
+            {leg.legType === 'flight'
+              ? <FlightCard flight={leg.data} index={startIndex} />
+              : <TrainCard train={leg.data} index={startIndex} />
+            }
             {i < group.legs.length - 1 && group.connections[i] && (
               <ConnectionRow conn={group.connections[i]!} />
             )}

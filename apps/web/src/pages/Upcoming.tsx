@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
+import { TrainCard } from '../components/TrainCard'
 import { ConnectionBadge } from '../components/ConnectionBadge'
 import { TripCard } from '../components/TripCard'
-import { buildDisplayItems } from '../lib/tripGrouping'
+import { buildDisplayItems, type DisplayItem } from '../lib/tripGrouping'
 import { formatDate } from '../lib/format'
 
 function daysUntil(dateStr: string): number {
@@ -24,15 +25,19 @@ function countdownLabel(dateStr: string): string {
   return 'Past'
 }
 
-function getItemDateKey(item: ReturnType<typeof buildDisplayItems>[number]): string {
+function getItemDateKey(item: DisplayItem): string {
   if (item.type === 'trip') {
-    return item.legs[0].departureScheduled.substring(0, 10)
+    return item.legs[0].data.departureScheduled.substring(0, 10)
+  }
+  if (item.type === 'standalone-train') {
+    return item.train.departureScheduled.substring(0, 10)
   }
   return item.flight.departureScheduled.substring(0, 10)
 }
 
-function getItemFirstDeparture(item: ReturnType<typeof buildDisplayItems>[number]): string {
-  if (item.type === 'trip') return item.legs[0].departureScheduled
+function getItemFirstDeparture(item: DisplayItem): string {
+  if (item.type === 'trip') return item.legs[0].data.departureScheduled
+  if (item.type === 'standalone-train') return item.train.departureScheduled
   return item.flight.departureScheduled
 }
 
@@ -40,6 +45,12 @@ export function UpcomingPage(): React.ReactElement {
   const { data: flights, isLoading } = useQuery({
     queryKey: ['flights', 'upcoming'],
     queryFn: () => api.flights.list('upcoming'),
+    refetchInterval: 120_000,
+  })
+
+  const { data: trains = [] } = useQuery({
+    queryKey: ['trains', 'upcoming'],
+    queryFn: () => api.trains.list('upcoming'),
     refetchInterval: 120_000,
   })
 
@@ -54,10 +65,10 @@ export function UpcomingPage(): React.ReactElement {
     refetchInterval: 60_000,
   })
 
-  const displayItems = buildDisplayItems(flights ?? [])
+  const displayItems = buildDisplayItems(flights ?? [], trains)
 
   // Group display items by date
-  const dateGroups = new Map<string, ReturnType<typeof buildDisplayItems>>()
+  const dateGroups = new Map<string, DisplayItem[]>()
   for (const item of displayItems) {
     const key = getItemDateKey(item)
     if (!dateGroups.has(key)) dateGroups.set(key, [])
@@ -108,14 +119,14 @@ export function UpcomingPage(): React.ReactElement {
         </div>
       )}
 
-      {flights && flights.length === 0 && !isLoading && (
+      {flights && flights.length === 0 && trains.length === 0 && !isLoading && (
         <div className="empty">
-          <h3>No upcoming flights</h3>
-          <p>Add a flight to start tracking</p>
+          <h3>Nothing upcoming</h3>
+          <p>Add a flight or train to start tracking</p>
         </div>
       )}
 
-      {([...dateGroups.entries()] as [string, ReturnType<typeof buildDisplayItems>][]).map(
+      {([...dateGroups.entries()] as [string, DisplayItem[]][]).map(
         ([dateKey, items]) => {
           const firstDeparture = getItemFirstDeparture(items[0])
           return (
@@ -129,6 +140,10 @@ export function UpcomingPage(): React.ReactElement {
                   const idx = globalIndex
                   globalIndex += item.legs.length
                   return <TripCard key={item.tripId} group={item} index={idx} />
+                }
+                if (item.type === 'standalone-train') {
+                  const idx = globalIndex++
+                  return <TrainCard key={item.train.id} train={item.train} index={idx} />
                 }
                 const f = item.flight
                 const conn = connections?.find(c => c.flightId === f.id)

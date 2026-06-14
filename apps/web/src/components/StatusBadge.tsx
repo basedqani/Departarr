@@ -8,9 +8,10 @@ export function StatusBadge({ status }: Props): React.ReactElement {
   const knownStatuses = [
     'scheduled', 'boarding', 'departed', 'en-route',
     'landed', 'arrived', 'delayed', 'cancelled', 'diverted',
+    'at-station',
   ]
   const cls = knownStatuses.includes(normalized) ? normalized : 'unknown'
-  const isLive = normalized === 'boarding' || normalized === 'departed' || normalized === 'en-route'
+  const isLive = normalized === 'boarding' || normalized === 'departed' || normalized === 'en-route' || normalized === 'at-station'
 
   return (
     <span className={`badge badge-${cls}`}>
