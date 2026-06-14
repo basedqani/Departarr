@@ -18,7 +18,7 @@ interface Props {
 // Plane icon for the GL symbol layer. Rendered in the map's own coordinate
 // space (unlike an HTML Marker, which mis-projects on the globe), so it always
 // sits exactly on the arc. Points "up" (north) at 0° so icon-rotate == heading.
-const PLANE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" fill="#eaf7fb" stroke="#4ec9d6" stroke-width="0.6"/></svg>`
+const PLANE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" fill="#ffffff" stroke="#0a84ff" stroke-width="0.6"/></svg>`
 const PLANE_ICON_URI = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(PLANE_ICON_SVG)
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] }
@@ -40,34 +40,6 @@ function applyPlane(
   })
 }
 
-// Recolor a default vector basemap into a premium "midnight" palette — deep
-// ocean blue, near-black land, faint glowing borders. Heuristic by layer id so
-// it works across style variants without hardcoding exact layer names.
-function applyPremiumTheme(map: import('maplibre-gl').Map): void {
-  let layers: Array<{ id: string; type: string }>
-  try {
-    layers = (map.getStyle()?.layers ?? []) as Array<{ id: string; type: string }>
-  } catch {
-    return
-  }
-  for (const layer of layers) {
-    const id = layer.id.toLowerCase()
-    try {
-      if (layer.type === 'background') {
-        map.setPaintProperty(layer.id, 'background-color', '#070d1a')
-      } else if (id.includes('water') || id.includes('ocean') || id.includes('sea') || id.includes('marine') || id.includes('bathymetry')) {
-        if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#0a1e3d')
-        else if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', '#0a1e3d')
-      } else if (id.includes('boundary') || id.includes('admin') || id.includes('border')) {
-        if (layer.type === 'line') map.setPaintProperty(layer.id, 'line-color', 'rgba(125,155,205,0.22)')
-      } else if (id.includes('land') || id.includes('earth') || id.includes('park') || id.includes('forest') || id.includes('wood') || id.includes('grass')) {
-        if (layer.type === 'fill') map.setPaintProperty(layer.id, 'fill-color', '#0c1322')
-      }
-    } catch {
-      // some layers don't accept the property — skip
-    }
-  }
-}
 
 export function GlobeMap({ origin, destination, position, departureScheduled, arrivalScheduled, status, expanded, onExpandToggle }: Props): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -100,7 +72,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
 
       const map = new Map({
         container: containerRef.current!,
-        style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+        style: 'https://tiles.openfreemap.org/styles/liberty',
         center: [0, 20],
         zoom: 1.5,
         attributionControl: false,
@@ -124,23 +96,6 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
         } catch {
           // fallback: mercator is fine
         }
-
-        // Sky / atmosphere for floating-in-space look — bluish horizon glow
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(map as any).setFog({
-            color: 'rgba(8, 16, 32, 0)',
-            'high-color': 'rgba(40, 90, 170, 0.45)',
-            'horizon-blend': 0.12,
-            'space-color': '#04060d',
-            'star-intensity': 0.22,
-          })
-        } catch {
-          // older API — skip
-        }
-
-        // Recolor the bland default style into a premium midnight cartography.
-        applyPremiumTheme(map)
 
         if (!originAirport || !destAirport) return
 
@@ -177,9 +132,9 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'flight-arc',
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                  'line-color': '#4ec9d6',
+                  'line-color': '#0a84ff',
                   'line-width': 12,
-                  'line-opacity': 0.16,
+                  'line-opacity': 0.18,
                   'line-blur': 6,
                 },
               })
@@ -193,7 +148,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'flight-arc',
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                  'line-color': '#7fe0ea',
+                  'line-color': '#0a84ff',
                   'line-width': 2.5,
                   'line-opacity': 0.95,
                 },
@@ -222,7 +177,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'airports',
                 paint: {
                   'circle-radius': 12,
-                  'circle-color': '#4ec9d6',
+                  'circle-color': '#0a84ff',
                   'circle-opacity': 0.18,
                   'circle-blur': 1,
                 },
@@ -236,9 +191,9 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
                 source: 'airports',
                 paint: {
                   'circle-radius': 5,
-                  'circle-color': '#eaf7fb',
+                  'circle-color': '#ffffff',
                   'circle-opacity': 1,
-                  'circle-stroke-color': '#4ec9d6',
+                  'circle-stroke-color': '#0a84ff',
                   'circle-stroke-width': 2.5,
                 },
               })
@@ -351,7 +306,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
         style={{
           width: '100%',
           height: '100%',
-          background: '#05080f',
+          background: '#e8eef4',
         }}
       />
       {/* Globe controls: expand + recenter */}
