@@ -4,7 +4,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatTime, formatDateTime, formatDuration, formatLocalTime, formatTzShift, getAirportTz } from '../lib/format'
+import { formatTime, formatDuration, formatLocalTime, formatTzShift, getAirportTz } from '../lib/format'
 import type { AircraftPosition, Flight, FlightWithEvents, WeatherResult } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
@@ -237,6 +237,48 @@ interface ConnectionInfo {
   effectiveMinutes: number
   inboundDelayMin: number
   rating: ReturnType<typeof getConnectionRating>
+}
+
+function fmtTime(iso: string | null | undefined, airportIata: string): string {
+  if (!iso) return ''
+  return formatLocalTime(iso, getAirportTz(airportIata))
+}
+
+function formatEventLabel(
+  eventType: string,
+  oldValue: string | null,
+  newValue: string | null,
+  origin: string,
+  dest: string,
+): string {
+  switch (eventType) {
+    case 'gate_change': {
+      if (oldValue && newValue) return `Gate changed from ${oldValue} to ${newValue}`
+      if (newValue) return `Gate assigned: ${newValue}`
+      return 'Gate updated'
+    }
+    case 'delay': {
+      const oldT = fmtTime(oldValue, origin)
+      const newT = fmtTime(newValue, origin)
+      if (oldT && newT) return `Departure delayed: ${oldT} → ${newT}`
+      if (newT) return `Departure updated to ${newT}`
+      return 'Departure time changed'
+    }
+    case 'departure':
+      return `Pushed back from gate${newValue ? ` at ${fmtTime(newValue, origin)}` : ''}`
+    case 'takeoff':
+      return `Airborne${newValue ? ` at ${fmtTime(newValue, origin)}` : ''}`
+    case 'arrival':
+      return `Landed${newValue ? ` at ${fmtTime(newValue, dest)}` : ''}`
+    case 'baggage':
+      return newValue ? `Baggage claim: Carousel ${newValue}` : 'Baggage claim updated'
+    case 'cancellation':
+      return 'Flight cancelled'
+    case 'status_change':
+      return newValue ? `Status: ${newValue.replace(/_/g, ' ')}` : 'Status updated'
+    default:
+      return eventType.replace(/_/g, ' ')
+  }
 }
 
 function buildConnections(currentFlight: FlightWithEvents, tripFlights: Flight[]): ConnectionInfo[] {
@@ -1179,28 +1221,24 @@ export function FlightDetailPage(): React.ReactElement {
             <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '1rem' }}>
               Updates
             </div>
-            {flight.events.map((ev, i) => (
-              <div key={ev.id} style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '0.5rem 0',
-                borderBottom: i < flight.events.length - 1 ? '1px solid var(--hairline)' : 'none',
-              }}>
-                <div>
-                  <span style={{ fontSize: '0.85rem', textTransform: 'capitalize', fontWeight: 500 }}>
-                    {ev.eventType.replace(/_/g, ' ')}
+            {flight.events.map((ev, i) => {
+              const label = formatEventLabel(ev.eventType, ev.oldValue, ev.newValue, flight.origin, flight.destination)
+              return (
+                <div key={ev.id} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem',
+                  padding: '0.55rem 0',
+                  borderBottom: i < flight.events.length - 1 ? '1px solid var(--hairline)' : 'none',
+                }}>
+                  <span style={{ fontSize: '0.875rem', lineHeight: 1.4 }}>{label}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', flexShrink: 0, paddingTop: '0.1rem' }}>
+                    {formatTime(ev.occurredAt)}
                   </span>
-                  {ev.oldValue && ev.newValue && (
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
-                      {ev.oldValue} → {ev.newValue}
-                    </span>
-                  )}
                 </div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', flexShrink: 0, marginLeft: '0.75rem' }}>
-                  {formatDateTime(ev.occurredAt)}
-                </span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
