@@ -157,7 +157,13 @@ export function buildPushNotification(
     case 'departure': {
       const timeStr = newValue ? fmtLocalTime(newValue, originIata) : null
       const body = timeStr ? `Pushed back at ${timeStr}` : 'Pushed back from gate'
-      return { title: `${ident} · Departed`, body }
+      return { title: `${ident} · Departed Gate`, body }
+    }
+
+    case 'takeoff': {
+      const timeStr = newValue ? fmtLocalTime(newValue, originIata) : null
+      const body = timeStr ? `Wheels up at ${timeStr}` : 'Airborne'
+      return { title: `${ident} · Airborne`, body }
     }
 
     case 'arrival': {

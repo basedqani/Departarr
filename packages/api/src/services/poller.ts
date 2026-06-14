@@ -126,7 +126,9 @@ function diffFlights(stored: FlightFields, fresh: FlightData): FieldDiff[] {
   check('arrivalActual', 'arrival', stored.arrivalActual, fresh.arrivalActual)
   check('baggageClaim', 'baggage', stored.baggageClaim, fresh.baggageClaim)
   check('takeoffEstimated', 'delay', stored.takeoffEstimated, fresh.takeoffEstimated)
-  check('takeoffActual', 'departure', stored.takeoffActual, fresh.takeoffActual)
+  // takeoffActual = wheels-off (runway detection); use distinct eventType so it
+  // isn't deduplicated against departureActual (gate-out) in the same poll cycle.
+  check('takeoffActual', 'takeoff', stored.takeoffActual, fresh.takeoffActual)
   check('landingEstimated', 'delay', stored.landingEstimated, fresh.landingEstimated)
   check('landingActual', 'arrival', stored.landingActual, fresh.landingActual)
 
