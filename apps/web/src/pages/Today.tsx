@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
 import { ConnectionBadge } from '../components/ConnectionBadge'
-import { TripGroup } from '../components/TripGroup'
+import { TripCard } from '../components/TripCard'
 import { buildDisplayItems } from '../lib/tripGrouping'
 
 function getGreeting(): string {
@@ -99,7 +99,7 @@ export function TodayPage(): React.ReactElement {
 
       {displayItems.map((item, i) => {
         if (item.type === 'trip') {
-          return <TripGroup key={item.tripId} group={item} startIndex={i} />
+          return <TripCard key={item.tripId} group={item} index={i} />
         }
         const f = item.flight
         const conn = connections?.find(c => c.flightId === f.id)

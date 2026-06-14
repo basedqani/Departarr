@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
 import { ConnectionBadge } from '../components/ConnectionBadge'
-import { TripGroup } from '../components/TripGroup'
+import { TripCard } from '../components/TripCard'
 import { buildDisplayItems } from '../lib/tripGrouping'
 import { formatDate } from '../lib/format'
 
@@ -128,7 +128,7 @@ export function UpcomingPage(): React.ReactElement {
                 if (item.type === 'trip') {
                   const idx = globalIndex
                   globalIndex += item.legs.length
-                  return <TripGroup key={item.tripId} group={item} startIndex={idx} />
+                  return <TripCard key={item.tripId} group={item} index={idx} />
                 }
                 const f = item.flight
                 const conn = connections?.find(c => c.flightId === f.id)
