@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { api, type Flight } from '../lib/api'
 import { formatDate, formatDuration } from '../lib/format'
 import { getAirport } from '../lib/airports'
+import { AirlineLogo } from '../components/AirlineLogo'
 
 // Haversine great-circle distance in miles
 function distanceMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -205,6 +206,9 @@ function FlightStamp({ flight, index }: { flight: Flight; index: number }): Reac
               {monthDay.split(' ')[1]}
             </div>
           </div>
+
+          {/* Airline logo */}
+          <AirlineLogo iata={flight.airlineIata} size={22} style={{ borderRadius: 3, opacity: 0.85 }} />
 
           {/* Route */}
           <div style={{ flex: 1, minWidth: 0 }}>

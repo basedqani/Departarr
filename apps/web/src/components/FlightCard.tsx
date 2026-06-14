@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import type { Flight } from '../lib/api'
 import { StatusBadge } from './StatusBadge'
+import { AirlineLogo } from './AirlineLogo'
 import { formatTime, formatDate } from '../lib/format'
 import { getAirline } from '../lib/airlines'
 import { useCountdown } from '../hooks/useCountdown'
@@ -90,8 +91,9 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
             <StatusBadge status={flight.status} />
           </div>
 
-          {/* Row 2: Airline + flight code + time */}
+          {/* Row 2: Airline logo + flight code + name */}
           <div className="flight-meta-row" style={{ marginTop: '0.3rem' }}>
+            <AirlineLogo iata={flight.airlineIata} size={18} style={{ borderRadius: 2 }} />
             <span className="flight-meta-ident">{flight.ident}</span>
             {airlineName && (
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>·</span>
