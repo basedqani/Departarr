@@ -66,10 +66,13 @@ model Flight {
   landingActual      DateTime?
   seat               String?
   confirmationCode   String?
+  calendarEventId    String?       // Google Calendar event.id for dedup
   lastPolledAt       DateTime?
   createdAt          DateTime      @default(now())
   events             FlightEvent[]
   shareTokens        ShareToken[]
+
+  @@unique([userId, calendarEventId])
 }
 
 model FlightEvent {

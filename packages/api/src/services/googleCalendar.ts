@@ -2,7 +2,7 @@ import { google } from 'googleapis'
 import { prisma } from '../lib/prisma.js'
 import { getSettingWithEnvFallback } from '../lib/settings.js'
 import { detectFlightsInEvent, extractEventDate } from './flightDetector.js'
-import { lookupFlight } from './flightAware.js'
+import { lookupFlight, lookupAllFlightLegs } from './flightAware.js'
 import type { FastifyRequest } from 'fastify'
 
 async function getOAuthClient(req?: FastifyRequest) {
@@ -122,35 +122,54 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
             const date = extractEventDate(start as { date?: string; dateTime?: string })
             if (!date) continue
 
-            // Skip if already tracked (dedup against existing flights).
-            // Widen to ±2 days around the event date so UTC day-boundary shifts
-            // (e.g. 9:21 pm ET → next UTC day) can't cause a miss.
-            // Also constrain by route when origin/dest are known, so two legs of
-            // the same flight number on the same day aren't collapsed.
+            // Layer 1: precise dedup by calendar event ID
+            if (event.id) {
+              const byEventId = await prisma.flight.findFirst({
+                where: { userId, calendarEventId: event.id },
+              })
+              if (byEventId) continue
+            }
+
+            // Layer 2: fallback dedup by ident + date range (catches manual vs calendar dupes)
             const dayStart = new Date(`${date}T00:00:00Z`).getTime()
-            const existing = await prisma.flight.findFirst({
+            const byFlight = await prisma.flight.findFirst({
               where: {
                 userId,
                 ident: flight.ident,
                 departureScheduled: {
                   gte: new Date(dayStart - 36 * 3600 * 1000),
-                  lt: new Date(dayStart + 60 * 3600 * 1000),
+                  lt:  new Date(dayStart + 60 * 3600 * 1000),
                 },
-                ...(flight.origin && flight.dest
-                  ? { origin: flight.origin, destination: flight.dest }
-                  : {}),
               },
             })
-            if (existing) continue
+            if (byFlight) continue
 
             try {
               const departureUtc =
                 (start as { date?: string; dateTime?: string }).dateTime ?? undefined
-              const flightData = await lookupFlight(flight.ident, date, {
+
+              let flightData = await lookupFlight(flight.ident, date, {
                 origin: flight.origin,
                 dest: flight.dest,
                 departureUtc,
               })
+
+              // If no route hint was available and lookupFlight returned nothing,
+              // try fetching all legs and pick the one matching the date.
+              if (!flightData && !flight.origin && !flight.dest) {
+                const allLegs = await lookupAllFlightLegs(flight.ident, date)
+                if (allLegs.length === 0) {
+                  flightData = null
+                } else if (allLegs.length === 1) {
+                  flightData = allLegs[0]
+                } else {
+                  const matched = allLegs.find(leg =>
+                    leg.departureScheduled.toISOString().substring(0, 10) === date
+                  )
+                  flightData = matched ?? allLegs[0]
+                }
+              }
+
               if (!flightData) {
                 // For past flights, create a stub record from calendar data so
                 // deleted flights are restored on re-sync even when the data
@@ -176,6 +195,7 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
                       departureScheduled: depDate,
                       arrivalScheduled: new Date(depDate.getTime() + 2 * 60 * 60 * 1000),
                       status: 'arrived',
+                      calendarEventId: event.id ?? null,
                       lastPolledAt: null,
                     },
                   })
@@ -205,12 +225,18 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
                   baggageClaim: flightData.baggageClaim ?? null,
                   aircraftType: flightData.aircraftType ?? null,
                   registration: flightData.registration ?? null,
+                  calendarEventId: event.id ?? null,
                   lastPolledAt: new Date(),
                 },
               })
               flightsAdded++
             } catch (err) {
-              console.error(`Failed to add flight ${flight.ident} from calendar:`, err)
+              const code = (err as { code?: string }).code
+              if (code === 'P2002') {
+                console.log(`[calendar] ${flight.ident} on ${date} already in DB (conflict), skipping`)
+              } else {
+                console.error(`[calendar] Failed to add flight ${flight.ident}:`, err)
+              }
             }
           }
         } catch (err) {

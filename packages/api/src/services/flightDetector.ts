@@ -1,6 +1,38 @@
 // Pure utility functions for detecting flight references in calendar events.
 // All functions are side-effect-free and unit-testable.
 
+const AIRLINE_NAME_MAP: Record<string, string> = {
+  'CATHAY PACIFIC': 'CX', 'CATHAY': 'CX',
+  'AMERICAN AIRLINES': 'AA', 'AMERICAN': 'AA',
+  'UNITED AIRLINES': 'UA', 'UNITED': 'UA',
+  'DELTA': 'DL', 'SOUTHWEST': 'WN',
+  'ALASKA AIRLINES': 'AS', 'ALASKA': 'AS',
+  'JETBLUE': 'B6', 'SPIRIT': 'NK', 'FRONTIER': 'F9',
+  'AIR CANADA': 'AC', 'BRITISH AIRWAYS': 'BA',
+  'LUFTHANSA': 'LH', 'AIR FRANCE': 'AF',
+  'EMIRATES': 'EK', 'QATAR AIRWAYS': 'QR', 'QATAR': 'QR',
+  'SINGAPORE AIRLINES': 'SQ', 'SINGAPORE': 'SQ',
+  'JAPAN AIRLINES': 'JL', 'ANA': 'NH', 'ALL NIPPON': 'NH',
+  'KOREAN AIR': 'KE', 'ASIANA': 'OZ',
+  'THAI AIRWAYS': 'TG', 'MALAYSIA AIRLINES': 'MH',
+  'GARUDA': 'GA', 'PHILIPPINE AIRLINES': 'PR',
+  'VIETNAM AIRLINES': 'VN', 'AIRASIA': 'AK', 'AIR ASIA': 'AK',
+  'FLYDUBAI': 'FZ', 'OMAN AIR': 'WY', 'SAUDIA': 'SV',
+}
+
+function substituteAirlineNames(text: string): string {
+  let result = text
+  // Sort by length descending so longer names match before shorter substrings
+  const entries = Object.entries(AIRLINE_NAME_MAP).sort((a, b) => b[0].length - a[0].length)
+  for (const [name, code] of entries) {
+    result = result.replace(
+      new RegExp(`\\b${name}\\s+(?:FLIGHT\\s+)?(\\d{1,4})\\b`, 'g'),
+      `${code}$1`
+    )
+  }
+  return result
+}
+
 export interface DetectedFlight {
   ident: string
   airlineCode: string
@@ -46,10 +78,12 @@ const KNOWN_IATA_PREFIXES = new Set([
   'SK', 'SN', 'TK', 'TO', 'TP', 'U2', 'VY', 'W6',
   // Middle East & Africa
   'EK', 'EY', 'GF', 'MS', 'QR', 'RJ', 'AT', 'ET', 'KQ', 'SA', 'WB',
+  'FZ', 'WY', 'SV', 'LY',
   // Asia-Pacific
   'AI', 'AK', 'BI', 'BR', 'CA', 'CI', 'CX', 'CZ', 'D7', 'FD',
   'FJ', 'GA', 'JL', 'JQ', 'KE', 'MH', 'MU', 'NH', 'NZ', 'OZ',
   'PR', 'QF', 'SQ', 'TG', 'TR', 'UL', 'VA', 'VN', 'VT',
+  '5J', '3K', 'MM', 'BC', 'GK', 'IT',
   // Other
   'JP', 'PK',
 ])
@@ -100,7 +134,7 @@ function stripTimeStrings(text: string): string {
 
 export function detectFlightsInText(text: string): DetectedFlight[] {
   const results: DetectedFlight[] = []
-  const upperText = stripTimeStrings(text.toUpperCase())
+  const upperText = substituteAirlineNames(stripTimeStrings(text.toUpperCase()))
 
   const hasFlightKeyword = FLIGHT_KEYWORDS.some((kw) =>
     upperText.includes(kw.toUpperCase())
