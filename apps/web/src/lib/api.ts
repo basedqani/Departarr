@@ -63,8 +63,7 @@ export const api = {
       const token = localStorage.getItem('token')
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (token) headers['Authorization'] = `Bearer ${token}`
-      const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
-      const res = await fetch(`${BASE_URL}/flights/${id}/photo`, { headers })
+      const res = await fetch(`${BASE}/flights/${id}/photo`, { headers })
       if (res.status === 204) return null
       if (!res.ok) return null
       return res.json() as Promise<AircraftPhoto>

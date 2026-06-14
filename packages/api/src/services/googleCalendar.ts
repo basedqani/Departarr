@@ -51,7 +51,7 @@ export async function exchangeCodeForTokens(userId: string, code: string, req?: 
     },
     update: {
       accessToken: tokens.access_token ?? '',
-      refreshToken: tokens.refresh_token ?? tokens.refresh_token ?? '',
+      refreshToken: tokens.refresh_token ?? '',
       expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
     },
   })

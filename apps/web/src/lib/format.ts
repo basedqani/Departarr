@@ -1,20 +1,45 @@
 const AIRPORT_TZ: Record<string, string> = {
-  ATL: 'America/New_York', LAX: 'America/Los_Angeles', ORD: 'America/Chicago',
-  DFW: 'America/Chicago', DEN: 'America/Denver', JFK: 'America/New_York',
-  SFO: 'America/Los_Angeles', SEA: 'America/Los_Angeles', LAS: 'America/Los_Angeles',
-  MCO: 'America/New_York', EWR: 'America/New_York', PHX: 'America/Phoenix',
-  IAH: 'America/Chicago', MIA: 'America/New_York', BOS: 'America/New_York',
-  MSP: 'America/Chicago', DTW: 'America/Detroit', CLT: 'America/New_York',
-  PHL: 'America/New_York', LGA: 'America/New_York', BWI: 'America/New_York',
-  SLC: 'America/Denver', DCA: 'America/New_York', MDW: 'America/Chicago',
-  SAN: 'America/Los_Angeles', TPA: 'America/New_York', PDX: 'America/Los_Angeles',
-  HNL: 'Pacific/Honolulu', BNA: 'America/Chicago', AUS: 'America/Chicago',
-  MCI: 'America/Chicago', LHR: 'Europe/London', CDG: 'Europe/Paris',
-  AMS: 'Europe/Amsterdam', FRA: 'Europe/Berlin', NRT: 'Asia/Tokyo',
-  HND: 'Asia/Tokyo', ICN: 'Asia/Seoul', SIN: 'Asia/Singapore',
-  HKG: 'Asia/Hong_Kong', SYD: 'Australia/Sydney', DXB: 'Asia/Dubai',
-  DOH: 'Asia/Qatar', YYZ: 'America/Toronto', YVR: 'America/Vancouver',
-  GRU: 'America/Sao_Paulo',
+  // USA — Eastern
+  ATL: 'America/New_York', JFK: 'America/New_York', LGA: 'America/New_York',
+  EWR: 'America/New_York', MIA: 'America/New_York', MCO: 'America/New_York',
+  BOS: 'America/New_York', PHL: 'America/New_York', CLT: 'America/New_York',
+  DTW: 'America/New_York', BWI: 'America/New_York', DCA: 'America/New_York',
+  TPA: 'America/New_York', PIT: 'America/New_York', BUF: 'America/New_York',
+  JAX: 'America/New_York', ORF: 'America/New_York', ALB: 'America/New_York',
+  CVG: 'America/New_York', CMH: 'America/New_York', RDU: 'America/New_York',
+  RSW: 'America/New_York', CLE: 'America/New_York',
+  // USA — Central
+  ORD: 'America/Chicago', DFW: 'America/Chicago', MDW: 'America/Chicago',
+  IAH: 'America/Chicago', MSP: 'America/Chicago', BNA: 'America/Chicago',
+  MCI: 'America/Chicago', STL: 'America/Chicago', MSY: 'America/Chicago',
+  MKE: 'America/Chicago', AUS: 'America/Chicago',
+  IND: 'America/Indiana/Indianapolis',
+  // USA — Mountain
+  DEN: 'America/Denver', SLC: 'America/Denver', PHX: 'America/Phoenix',
+  // USA — Pacific
+  LAX: 'America/Los_Angeles', SFO: 'America/Los_Angeles', SEA: 'America/Los_Angeles',
+  LAS: 'America/Los_Angeles', PDX: 'America/Los_Angeles', SAN: 'America/Los_Angeles',
+  OAK: 'America/Los_Angeles', SJC: 'America/Los_Angeles', SMF: 'America/Los_Angeles',
+  // USA — Hawaii
+  HNL: 'Pacific/Honolulu',
+  // Canada
+  YYZ: 'America/Toronto', YVR: 'America/Vancouver',
+  // Europe
+  LHR: 'Europe/London', CDG: 'Europe/Paris', AMS: 'Europe/Amsterdam',
+  FRA: 'Europe/Berlin', MAD: 'Europe/Madrid', BCN: 'Europe/Madrid',
+  FCO: 'Europe/Rome', MUC: 'Europe/Berlin', ZRH: 'Europe/Zurich',
+  // Middle East
+  DXB: 'Asia/Dubai', DOH: 'Asia/Qatar', AUH: 'Asia/Dubai',
+  // Asia-Pacific
+  SIN: 'Asia/Singapore', HKG: 'Asia/Hong_Kong', NRT: 'Asia/Tokyo',
+  HND: 'Asia/Tokyo', ICN: 'Asia/Seoul', PEK: 'Asia/Shanghai',
+  PVG: 'Asia/Shanghai', SYD: 'Australia/Sydney', MEL: 'Australia/Melbourne',
+  BKK: 'Asia/Bangkok', KUL: 'Asia/Kuala_Lumpur', DEL: 'Asia/Kolkata',
+  BOM: 'Asia/Kolkata',
+  // Latin America
+  GRU: 'America/Sao_Paulo', EZE: 'America/Argentina/Buenos_Aires',
+  SCL: 'America/Santiago', LIM: 'America/Lima', MEX: 'America/Mexico_City',
+  CUN: 'America/Cancun', GDL: 'America/Mexico_City',
 }
 
 export function getAirportTz(iata: string): string {
