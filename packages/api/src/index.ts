@@ -43,6 +43,16 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app = Fastify({ logger: true })
 
+app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+  if (body === '' || body == null) return done(null, {})
+  try {
+    done(null, JSON.parse(body as string))
+  } catch (err) {
+    ;(err as { statusCode?: number }).statusCode = 400
+    done(err as Error, undefined)
+  }
+})
+
 await app.register(cors, {
   origin: process.env.APP_URL ?? true,
   credentials: true,
