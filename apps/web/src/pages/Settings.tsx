@@ -190,6 +190,13 @@ export function SettingsPage(): React.ReactElement {
   const [adminMode, setAdminMode] = useState(() =>
     localStorage.getItem('adminMode') !== 'false'
   )
+  const [tempUnit, setTempUnit] = useState<'F' | 'C'>(() =>
+    (localStorage.getItem('tempUnit') as 'F' | 'C') ?? 'F'
+  )
+  const handleTempUnit = (unit: 'F' | 'C'): void => {
+    setTempUnit(unit)
+    localStorage.setItem('tempUnit', unit)
+  }
   const toggleAdminMode = (): void => {
     const next = !adminMode
     setAdminMode(next)
@@ -524,6 +531,32 @@ export function SettingsPage(): React.ReactElement {
         {adminMode && syncResult && (
           <div style={{ padding: '0.5rem 1rem 0.875rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{syncResult}</div>
         )}
+      </div>
+
+      {/* Display */}
+      <div className="settings-section">
+        <div className="settings-section-title">Display</div>
+        <div className="settings-row">
+          <div className="settings-row-label">Temperature</div>
+          <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+            {(['F', 'C'] as const).map(unit => (
+              <button
+                key={unit}
+                onClick={() => handleTempUnit(unit)}
+                style={{
+                  padding: '0.3rem 0.75rem',
+                  fontSize: '0.82rem',
+                  background: tempUnit === unit ? 'var(--accent)' : 'var(--surface-raised)',
+                  color: tempUnit === unit ? '#fff' : 'var(--text)',
+                  border: `1px solid ${tempUnit === unit ? 'var(--accent)' : 'var(--hairline)'}`,
+                  borderRadius: 8,
+                }}
+              >
+                °{unit}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* About */}

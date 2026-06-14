@@ -684,22 +684,22 @@ function weatherEmoji(code: number): string {
 }
 
 function WeatherSection({ weather }: { weather: WeatherResult }): React.ReactElement | null {
-  if (weather.weather.length === 0) return null
+  const tempUnit = (localStorage.getItem('tempUnit') as 'F' | 'C') ?? 'F'
+  const w = weather.weather[0]
+  if (!w) return null
   return (
     <section className="weather-section">
       <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
         Weather at {weather.airport}
       </div>
       <div className="weather-slots">
-        {weather.weather.map(w => (
-          <div key={w.time} className="weather-slot">
-            <span className="weather-emoji">{weatherEmoji(w.code)}</span>
-            <span className="weather-temp">{Math.round(w.temp)}°</span>
-            <span className="weather-label">{weatherLabel(w.code)}</span>
-            <span className="weather-wind">{Math.round(w.wind)} km/h</span>
-            <span className="weather-time">{new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          </div>
-        ))}
+        <div className="weather-slot">
+          <span className="weather-emoji">{weatherEmoji(w.code)}</span>
+          <span className="weather-temp">{Math.round(w.temp)}°{tempUnit}</span>
+          <span className="weather-label">{weatherLabel(w.code)}</span>
+          <span className="weather-wind">{Math.round(w.wind)} km/h</span>
+          <span className="weather-time">{new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
       </div>
     </section>
   )
@@ -724,9 +724,10 @@ export function FlightDetailPage(): React.ReactElement {
     refetchInterval: 60_000,
   })
 
+  const tempUnit = (localStorage.getItem('tempUnit') as 'F' | 'C') ?? 'F'
   const { data: weather } = useQuery({
-    queryKey: ['weather', flight?.id],
-    queryFn: () => api.flights.weather(flight!.id),
+    queryKey: ['weather', flight?.id, tempUnit],
+    queryFn: () => api.flights.weather(flight!.id, tempUnit),
     enabled: !!flight?.destination && (!!flight?.arrivalScheduled || !!flight?.arrivalEstimated || !!flight?.arrivalActual),
     staleTime: 30 * 60 * 1000,
     retry: false,

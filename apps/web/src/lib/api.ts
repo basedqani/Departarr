@@ -75,8 +75,8 @@ export const api = {
       request<{ token: string; url: string }>(`/flights/${id}/share`, { method: 'POST' }),
     revokeShare: (id: string) =>
       request<void>(`/flights/${id}/share`, { method: 'DELETE' }),
-    weather: (id: string) =>
-      request<WeatherResult>(`/flights/${id}/weather`),
+    weather: (id: string, unit: 'F' | 'C' = 'F') =>
+      request<WeatherResult>(`/flights/${id}/weather?units=${unit === 'F' ? 'imperial' : 'metric'}`),
     deletePast: () =>
       request<{ deleted: number }>('/flights/past', { method: 'DELETE' }),
   },

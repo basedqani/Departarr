@@ -235,10 +235,13 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(updated)
   })
 
-  // GET /api/flights/:id/weather — Open-Meteo forecast around arrival time
+  // GET /api/flights/:id/weather — Open-Meteo forecast at arrival time
+  // Query params: ?units=imperial (default) or ?units=metric
   app.get('/flights/:id/weather', async (req, reply) => {
     const userId = (req.user as { id: string }).id
     const { id } = req.params as { id: string }
+    const { units } = req.query as { units?: string }
+    const useImperial = units !== 'metric' // default to imperial (Fahrenheit)
 
     const flight = await prisma.flight.findFirst({ where: { id, userId } })
     if (!flight) return reply.code(404).send({ error: 'Flight not found' })
@@ -254,7 +257,8 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     try {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 8000)
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weathercode,windspeed_10m,precipitation&timezone=auto&forecast_days=3`
+      const tempUnitParam = useImperial ? '&temperature_unit=fahrenheit' : ''
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weathercode,windspeed_10m,precipitation&timezone=auto&forecast_days=3${tempUnitParam}`
       const res = await fetch(url, { signal: controller.signal })
       clearTimeout(timer)
 
@@ -271,9 +275,9 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const arrMs = new Date(arrivalTime).getTime()
-      const WINDOW_MS = 1.5 * 60 * 60 * 1000 // ±1.5h
 
-      const slots = json.hourly.time
+      // Find the single closest slot to arrival time
+      const closest = json.hourly.time
         .map((t, i) => ({
           time: t,
           temp: json.hourly.temperature_2m[i],
@@ -282,11 +286,11 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
           precip: json.hourly.precipitation[i],
           diffMs: Math.abs(new Date(t).getTime() - arrMs),
         }))
-        .filter(s => s.diffMs <= WINDOW_MS)
-        .sort((a, b) => a.diffMs - b.diffMs)
-        .slice(0, 3)
-        .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
-        .map(({ time, temp, code, wind, precip }) => ({ time, temp, code, wind, precip }))
+        .sort((a, b) => a.diffMs - b.diffMs)[0]
+
+      const slots = closest
+        ? [{ time: closest.time, temp: closest.temp, code: closest.code, wind: closest.wind, precip: closest.precip }]
+        : []
 
       return reply.send({ airport: flight.destination, arrivalTime, weather: slots })
     } catch {
