@@ -84,7 +84,7 @@ export const api = {
     list: (when?: string) => request<Train[]>(`/trains${when ? `?when=${when}` : ''}`),
     get: (id: string) => request<TrainWithEvents>(`/trains/${id}`),
     lookup: (number: string, date: string) => request<TrainPreview>(`/trains/lookup?number=${encodeURIComponent(number)}&date=${encodeURIComponent(date)}`),
-    add: (data: { trainNumber: string; date: string; tripId?: string; origin?: string; destination?: string }) =>
+    add: (data: { trainNumber: string; date: string; tripId?: string; origin?: string; destination?: string; boardingStop?: { code: string; schDep?: string } }) =>
       request<Train>('/trains', { method: 'POST', body: JSON.stringify(data) }),
     patch: (id: string, body: { seat?: string | null; confirmationCode?: string | null; tripId?: string | null }) =>
       request<Train>(`/trains/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -126,7 +126,7 @@ export const api = {
   },
 
   calendar: {
-    sync: () => request<{ flightsFound: number }>('/calendar/sync', { method: 'POST' }),
+    sync: () => request<{ flightsFound: number; trainsFound: number }>('/calendar/sync', { method: 'POST' }),
   },
 
   settings: {

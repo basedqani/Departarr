@@ -45,6 +45,7 @@ export function AddFlightPage(): React.ReactElement {
   const [legs, setLegs] = useState<FlightPreview[]>([])
   const [preview, setPreview] = useState<FlightPreview | null>(null)
   const [trainPreview, setTrainPreview] = useState<TrainPreview | null>(null)
+  const [boardingStopCode, setBoardingStopCode] = useState<string>('')
 
   const { data: trips } = useQuery({ queryKey: ['trips'], queryFn: api.trips.list })
 
@@ -56,6 +57,7 @@ export function AddFlightPage(): React.ReactElement {
       if (mode === 'train') {
         const tp = await api.trains.lookup(ident.trim(), date)
         setTrainPreview(tp)
+        setBoardingStopCode(tp.origin)
         setStep('confirm')
       } else {
         const clean = ident.toUpperCase().replace(/\s+/g, '')
@@ -93,12 +95,15 @@ export function AddFlightPage(): React.ReactElement {
       setError('')
       setAdding(true)
       try {
+        const boardingStop = trainPreview.stops.find(s => s.code === boardingStopCode)
+        const origin = boardingStopCode || trainPreview.origin
         const train = await api.trains.add({
           trainNumber: ident.trim(),
           date,
           tripId: tripId || undefined,
-          origin: trainPreview.origin,
+          origin,
           destination: trainPreview.destination,
+          boardingStop: boardingStop ? { code: boardingStop.code, schDep: boardingStop.schDep ?? undefined } : undefined,
         })
         await queryClient.invalidateQueries({ queryKey: ['trains'] })
         navigate(`/trains/${train.id}`)
@@ -351,11 +356,41 @@ export function AddFlightPage(): React.ReactElement {
                 )}
               </div>
 
-              <div className="info-grid" style={{ marginTop: 0 }}>
+              {/* Boarding stop picker */}
+              {trainPreview.stops.length > 1 && (
+                <div style={{ marginTop: '0.875rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
+                    Boarding at
+                  </label>
+                  <select
+                    value={boardingStopCode}
+                    onChange={e => setBoardingStopCode(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: 10, border: '1px solid var(--hairline)', background: 'var(--card)', color: 'var(--text)', fontSize: '0.875rem', appearance: 'none', cursor: 'pointer' }}
+                  >
+                    {trainPreview.stops.map((stop, i) => (
+                      <option key={`${stop.code}-${i}`} value={stop.code}>
+                        {stop.code} — {stop.name}{stop.schDep ? ` (${stop.schDep.substring(0, 5)})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="info-grid" style={{ marginTop: '0.875rem' }}>
                 <div className="info-cell">
                   <div className="info-cell-label">Departure</div>
                   <div className="info-cell-value">
-                    {new Date(trainPreview.departureScheduled).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {(() => {
+                      const sel = trainPreview.stops.find(s => s.code === boardingStopCode)
+                      const timeStr = sel?.schDep ?? sel?.schArr
+                      if (timeStr) {
+                        const [h, m] = timeStr.split(':').map(Number)
+                        const d = new Date(trainPreview.departureScheduled)
+                        d.setHours(h, m, 0, 0)
+                        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      }
+                      return new Date(trainPreview.departureScheduled).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    })()}
                   </div>
                 </div>
                 <div className="info-cell">

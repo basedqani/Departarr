@@ -12,6 +12,7 @@ const addTrainSchema = z.object({
   tripId: z.string().optional(),
   origin: z.string().optional(),
   destination: z.string().optional(),
+  boardingStop: z.object({ code: z.string(), schDep: z.string().optional() }).optional(),
 })
 
 const patchTrainSchema = z.object({
@@ -83,17 +84,41 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
     const schedule = await lookupTrainSchedule(body.data.trainNumber, body.data.date)
     if (!schedule) return reply.code(404).send({ error: 'Train schedule not found for this date' })
 
+    // If a specific boarding stop was picked, adjust origin and departure time
+    let origin = body.data.origin ?? schedule.origin
+    let originName = schedule.originName ?? null
+    let departureScheduled = schedule.departureScheduled
+    if (body.data.boardingStop) {
+      const bs = body.data.boardingStop
+      const stopInfo = schedule.stops.find(s => s.code === bs.code)
+      if (stopInfo) {
+        origin = stopInfo.code
+        originName = stopInfo.name
+        if (bs.schDep) {
+          const [h, m] = bs.schDep.split(':').map(Number)
+          const d = new Date(schedule.departureScheduled)
+          d.setUTCHours(h, m, 0, 0)
+          departureScheduled = d
+        } else if (stopInfo.scheduledDep) {
+          const [h, m] = stopInfo.scheduledDep.split(':').map(Number)
+          const d = new Date(schedule.departureScheduled)
+          d.setUTCHours(h, m, 0, 0)
+          departureScheduled = d
+        }
+      }
+    }
+
     const train = await prisma.train.create({
       data: {
         userId,
         tripId: body.data.tripId ?? null,
         trainNumber: schedule.trainNumber,
         trainName: schedule.trainName ?? null,
-        origin: body.data.origin ?? schedule.origin,
+        origin,
         destination: body.data.destination ?? schedule.destination,
-        originName: schedule.originName ?? null,
+        originName,
         destinationName: schedule.destinationName ?? null,
-        departureScheduled: schedule.departureScheduled,
+        departureScheduled,
         arrivalScheduled: schedule.arrivalScheduled,
         stopsJson: schedule.stops.length > 0 ? JSON.stringify(schedule.stops) : null,
         status: 'scheduled',

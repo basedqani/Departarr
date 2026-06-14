@@ -59,11 +59,16 @@ export async function exchangeCodeForTokens(userId: string, code: string, req?: 
   })
 }
 
-export async function syncCalendarForUser(userId: string): Promise<number> {
+export interface SyncResult {
+  flightsFound: number
+  trainsFound: number
+}
+
+export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
   const connection = await prisma.calendarConnection.findFirst({
     where: { userId, provider: 'google' },
   })
-  if (!connection) return 0
+  if (!connection) return { flightsFound: 0, trainsFound: 0 }
 
   const oauth2Client = await getOAuthClient()
   oauth2Client.setCredentials({
@@ -94,6 +99,7 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
 
   let pageToken: string | undefined
   let flightsAdded = 0
+  let trainsAdded = 0
 
   try {
     do {
@@ -288,7 +294,7 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
                   status: 'scheduled',
                 },
               })
-              flightsAdded++
+              trainsAdded++
             } catch (err) {
               const code = (err as { code?: string }).code
               if (code === 'P2002') {
@@ -311,12 +317,12 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
     // serving other users.
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`Calendar sync failed for user ${userId}:`, msg)
-    await recordSyncResult(userId, flightsAdded, msg)
-    return flightsAdded
+    await recordSyncResult(userId, flightsAdded + trainsAdded, msg)
+    return { flightsFound: flightsAdded, trainsFound: trainsAdded }
   }
 
-  await recordSyncResult(userId, flightsAdded, null)
-  return flightsAdded
+  await recordSyncResult(userId, flightsAdded + trainsAdded, null)
+  return { flightsFound: flightsAdded, trainsFound: trainsAdded }
 }
 
 /**

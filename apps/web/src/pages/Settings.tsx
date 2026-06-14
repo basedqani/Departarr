@@ -263,7 +263,10 @@ export function SettingsPage(): React.ReactElement {
     setSyncResult(null)
     try {
       const res = await api.calendar.sync()
-      setSyncResult(`Found ${res.flightsFound} new flight(s) in your calendar.`)
+      const parts: string[] = []
+      if (res.flightsFound > 0) parts.push(`${res.flightsFound} flight${res.flightsFound !== 1 ? 's' : ''}`)
+      if (res.trainsFound > 0) parts.push(`${res.trainsFound} train${res.trainsFound !== 1 ? 's' : ''}`)
+      setSyncResult(parts.length > 0 ? `Added ${parts.join(' and ')} from your calendar.` : 'Calendar synced — nothing new found.')
       await queryClient.invalidateQueries({ queryKey: ['flights'] })
     } catch (err) {
       setSyncResult(err instanceof Error ? err.message : 'Sync failed')
@@ -485,7 +488,7 @@ export function SettingsPage(): React.ReactElement {
         {calendarStatus === 'connected' && (
           <div style={{ margin: '0 0 0.5rem', padding: '0.7rem 1rem', borderRadius: 12, background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', fontSize: '0.82rem', color: 'var(--on-time)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
-            Google Calendar connected. Tap Sync to import flights.
+            Google Calendar connected. Tap Sync to import flights and trains.
             <button onClick={() => setSearchParams({})} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--on-time)', cursor: 'pointer', fontSize: '1.1rem', padding: 0, lineHeight: 1 }}>×</button>
           </div>
         )}
@@ -520,7 +523,7 @@ export function SettingsPage(): React.ReactElement {
             </button>
           )}
         </div>
-        {adminMode && features?.googleCalendar && (
+        {features?.googleCalendar && (
           <div className="settings-row">
             <div className="settings-row-label">Sync now</div>
             <button className="secondary" onClick={() => void handleCalendarSync()} disabled={syncLoading} style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
@@ -528,7 +531,7 @@ export function SettingsPage(): React.ReactElement {
             </button>
           </div>
         )}
-        {adminMode && syncResult && (
+        {syncResult && (
           <div style={{ padding: '0.5rem 1rem 0.875rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{syncResult}</div>
         )}
       </div>

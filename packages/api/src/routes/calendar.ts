@@ -28,8 +28,8 @@ export async function calendarRoutes(app: FastifyInstance): Promise<void> {
   app.post('/calendar/sync', { preHandler: authMiddleware }, async (req, reply) => {
     const userId = (req.user as { id: string }).id
     try {
-      const count = await syncCalendarForUser(userId)
-      return reply.send({ flightsFound: count })
+      const result = await syncCalendarForUser(userId)
+      return reply.send(result)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       return reply.code(500).send({ error: msg })
