@@ -31,6 +31,13 @@ export async function tripRoutes(app: FastifyInstance): Promise<void> {
             departureScheduled: true, arrivalScheduled: true, status: true,
           },
         },
+        trains: {
+          orderBy: { departureScheduled: 'asc' },
+          select: {
+            id: true, trainNumber: true, trainName: true, origin: true, destination: true,
+            departureScheduled: true, arrivalScheduled: true, status: true,
+          },
+        },
       },
     })
     return reply.send(trips)
@@ -58,7 +65,13 @@ export async function tripRoutes(app: FastifyInstance): Promise<void> {
 
     const trip = await prisma.trip.findFirst({
       where: { id, userId },
-      include: { flights: { orderBy: { departureScheduled: 'asc' } } },
+      include: {
+        flights: { orderBy: { departureScheduled: 'asc' } },
+        trains: {
+          orderBy: { departureScheduled: 'asc' },
+          include: { events: { orderBy: { occurredAt: 'desc' } } },
+        },
+      },
     })
     if (!trip) return reply.code(404).send({ error: 'Trip not found' })
     return reply.send(trip)
@@ -109,6 +122,25 @@ export async function tripRoutes(app: FastifyInstance): Promise<void> {
 
     const updated = await prisma.flight.update({
       where: { id: flightId },
+      data: { tripId: id },
+    })
+    return reply.send(updated)
+  })
+
+  // POST /api/trips/:id/trains — attach an existing train
+  app.post('/trips/:id/trains', async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const { id } = req.params as { id: string }
+    const { trainId } = req.body as { trainId: string }
+
+    const trip = await prisma.trip.findFirst({ where: { id, userId } })
+    if (!trip) return reply.code(404).send({ error: 'Trip not found' })
+
+    const train = await prisma.train.findFirst({ where: { id: trainId, userId } })
+    if (!train) return reply.code(404).send({ error: 'Train not found' })
+
+    const updated = await prisma.train.update({
+      where: { id: trainId },
       data: { tripId: id },
     })
     return reply.send(updated)

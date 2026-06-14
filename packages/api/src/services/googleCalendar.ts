@@ -3,6 +3,8 @@ import { prisma } from '../lib/prisma.js'
 import { getSettingWithEnvFallback } from '../lib/settings.js'
 import { detectFlightsInEvent, extractEventDate } from './flightDetector.js'
 import { lookupFlight, lookupAllFlightLegs } from './flightAware.js'
+import { detectTrainsInEvent } from './trainDetector.js'
+import { lookupTrainSchedule } from './gtfs.js'
 import type { FastifyRequest } from 'fastify'
 
 async function getOAuthClient(req?: FastifyRequest) {
@@ -213,6 +215,61 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
                 console.log(`[calendar] ${flight.ident} on ${date} already in DB (conflict), skipping`)
               } else {
                 console.error(`[calendar] Failed to add flight ${flight.ident}:`, err)
+              }
+            }
+          }
+          // ── Train detection ───────────────────────────────────────────
+          const detectedTrains = detectTrainsInEvent({
+            summary: event.summary,
+            description: event.description,
+            location: event.location,
+          })
+
+          for (const detected of detectedTrains) {
+            try {
+              const start = event.start
+              if (!start) continue
+              const eventDate = extractEventDate(start as { date?: string; dateTime?: string })
+              if (!eventDate) continue
+
+              // Only import upcoming trains
+              const trainDate = new Date(eventDate + 'T23:59:59Z')
+              if (trainDate < new Date()) continue
+
+              // Dedup by calendar event ID
+              if (event.id) {
+                const existing = await prisma.train.findFirst({
+                  where: { userId, calendarEventId: event.id },
+                })
+                if (existing) continue
+              }
+
+              const schedule = await lookupTrainSchedule(detected.trainNumber, eventDate)
+              if (!schedule) continue
+
+              await prisma.train.create({
+                data: {
+                  userId,
+                  calendarEventId: event.id ?? null,
+                  trainNumber: schedule.trainNumber,
+                  trainName: schedule.trainName ?? null,
+                  origin: schedule.origin,
+                  destination: schedule.destination,
+                  originName: schedule.originName ?? null,
+                  destinationName: schedule.destinationName ?? null,
+                  departureScheduled: schedule.departureScheduled,
+                  arrivalScheduled: schedule.arrivalScheduled,
+                  stopsJson: schedule.stops.length > 0 ? JSON.stringify(schedule.stops) : null,
+                  status: 'scheduled',
+                },
+              })
+              flightsAdded++
+            } catch (err) {
+              const code = (err as { code?: string }).code
+              if (code === 'P2002') {
+                console.log(`[calendar] Train ${detected.trainNumber} already in DB (conflict), skipping`)
+              } else {
+                console.error(`[calendar] Failed to add train ${detected.trainNumber}:`, err)
               }
             }
           }

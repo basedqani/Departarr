@@ -21,7 +21,9 @@ import { shareRoutes } from './routes/share.js'
 import { pushRoutes } from './routes/push.js'
 import { calendarRoutes } from './routes/calendar.js'
 import { settingsRoutes } from './routes/settings.js'
+import { trainRoutes } from './routes/trains.js'
 import { startPoller } from './services/poller.js'
+import { startTrainPoller } from './services/trainPoller.js'
 import { startCalendarScheduler } from './services/calendarScheduler.js'
 import { wsClients } from './lib/wsClients.js'
 
@@ -116,6 +118,7 @@ app.get('/ws', { websocket: true }, (socket, req) => {
 
 await app.register(authRoutes, { prefix: '/api/auth' })
 await app.register(flightRoutes, { prefix: '/api' })
+await app.register(trainRoutes, { prefix: '/api' })
 await app.register(tripRoutes, { prefix: '/api' })
 await app.register(shareRoutes, { prefix: '/api' })
 await app.register(pushRoutes, { prefix: '/api/push' })
@@ -131,6 +134,7 @@ try {
   await app.listen({ port, host: '0.0.0.0' })
   console.log(`API listening on port ${port}`)
   startPoller()
+  startTrainPoller()
   startCalendarScheduler()
 } catch (err) {
   app.log.error(err)

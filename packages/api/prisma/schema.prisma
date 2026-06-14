@@ -15,6 +15,7 @@ model User {
   isAdmin             Boolean              @default(false)
   createdAt           DateTime             @default(now())
   flights             Flight[]
+  trains              Train[]
   trips               Trip[]
   pushSubscriptions   PushSubscription[]
   calendarConnections CalendarConnection[]
@@ -29,6 +30,7 @@ model Trip {
   endDate   DateTime?
   createdAt DateTime  @default(now())
   flights   Flight[]
+  trains    Train[]
   shareTokens ShareToken[]
 }
 
@@ -134,4 +136,44 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model Train {
+  id                  String        @id @default(cuid())
+  userId              String
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripId              String?
+  trip                Trip?         @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  trainNumber         String
+  trainName           String?
+  origin              String
+  destination         String
+  originName          String?
+  destinationName     String?
+  departureScheduled  DateTime
+  departureEstimated  DateTime?
+  departureActual     DateTime?
+  arrivalScheduled    DateTime
+  arrivalEstimated    DateTime?
+  arrivalActual       DateTime?
+  status              String        @default("scheduled")
+  stopsJson           String?
+  seat                String?
+  confirmationCode    String?
+  calendarEventId     String?
+  lastPolledAt        DateTime?
+  createdAt           DateTime      @default(now())
+  events              TrainEvent[]
+
+  @@unique([userId, calendarEventId])
+}
+
+model TrainEvent {
+  id         String   @id @default(cuid())
+  trainId    String
+  train      Train    @relation(fields: [trainId], references: [id], onDelete: Cascade)
+  eventType  String
+  oldValue   String?
+  newValue   String?
+  occurredAt DateTime @default(now())
 }
