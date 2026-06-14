@@ -49,7 +49,9 @@ export const api = {
       request<FlightWithEvents>(`/flights/${id}`),
     lookup: (ident: string, date: string) =>
       request<FlightPreview>(`/flights/lookup?ident=${encodeURIComponent(ident)}&date=${encodeURIComponent(date)}`),
-    add: (data: { ident: string; date: string; tripId?: string }) =>
+    lookupAll: (ident: string, date: string) =>
+      request<FlightPreview[]>(`/flights/lookup-all?ident=${encodeURIComponent(ident)}&date=${encodeURIComponent(date)}`),
+    add: (data: { ident: string; date: string; tripId?: string; origin?: string; dest?: string }) =>
       request<Flight>('/flights', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<void>(`/flights/${id}`, { method: 'DELETE' }),

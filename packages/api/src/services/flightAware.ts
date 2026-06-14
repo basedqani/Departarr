@@ -1,7 +1,7 @@
 import { getSettingWithEnvFallback } from '../lib/settings.js'
 import { incrementUsage, isOverBudget } from '../lib/apiBudget.js'
 import { generateStubFlight } from './stubData.js'
-import { lookupAeroDataBox, getAeroDataBoxKey, ADB_PROVIDER } from './aeroDataBox.js'
+import { lookupAeroDataBox, lookupAllLegsAeroDataBox, getAeroDataBoxKey, ADB_PROVIDER } from './aeroDataBox.js'
 
 const AEROAPI_BASE = 'https://aeroapi.flightaware.com/aeroapi'
 
@@ -137,6 +137,40 @@ async function lookupFlightAware(ident: string, date: string): Promise<FlightDat
   if (flights.length === 0) return null
 
   return mapFlight(flights[0])
+}
+
+/**
+ * Return all legs for a flight number + date. Used by the leg-picker so the
+ * user can select the right direction. Falls back to a single-item array when
+ * only FlightAware (which doesn't expose multi-leg in one call) is available.
+ */
+export async function lookupAllFlightLegs(
+  ident: string,
+  date: string,
+): Promise<FlightData[]> {
+  const apiKey = await getApiKey()
+  if (apiKey) {
+    // FlightAware returns multiple entries for different legs in the same call;
+    // fetch them all and let the UI pick.
+    const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}&end=${date}`
+    await incrementUsage('aeroapi')
+    try {
+      const res = await fetch(url, { headers: { 'x-apikey': apiKey } })
+      if (!res.ok) return []
+      const data = await res.json() as { flights?: unknown[] }
+      return (data.flights ?? []).map((f) => mapFlight(f as Parameters<typeof mapFlight>[0]))
+    } catch {
+      return []
+    }
+  }
+
+  if (await getAeroDataBoxKey()) {
+    return lookupAllLegsAeroDataBox(ident, date)
+  }
+
+  // Demo mode: single stub leg
+  const stub = await generateStubFlight(ident, date)
+  return stub ? [stub] : []
 }
 
 export async function fetchFlightById(faFlightId: string): Promise<FlightData | null> {

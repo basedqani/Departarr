@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Logo } from './Logo'
+import { api } from '../lib/api'
 
 function IconToday(): React.ReactElement {
   return (
@@ -56,6 +58,14 @@ interface Props {
 
 export function Layout({ children }: Props): React.ReactElement {
   const location = useLocation()
+
+  // Trigger a silent calendar sync once per browser session so new flights
+  // from Google Calendar are picked up whenever the user opens the app.
+  useEffect(() => {
+    if (sessionStorage.getItem('cal-synced')) return
+    sessionStorage.setItem('cal-synced', '1')
+    api.calendar.sync().catch(() => { /* silent — user may not have calendar connected */ })
+  }, [])
   const isFlightDetail = location.pathname.startsWith('/flights/') && location.pathname !== '/flights/add'
 
   return (

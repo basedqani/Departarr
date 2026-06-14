@@ -7,6 +7,8 @@ import { getAirport } from '../lib/airports'
 import { formatTime } from '../lib/format'
 import { StatusBadge } from '../components/StatusBadge'
 
+type Step = 'form' | 'pick-leg' | 'confirm'
+
 export function AddFlightPage(): React.ReactElement {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -16,6 +18,8 @@ export function AddFlightPage(): React.ReactElement {
   const [error, setError] = useState('')
   const [looking, setLooking] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [step, setStep] = useState<Step>('form')
+  const [legs, setLegs] = useState<FlightPreview[]>([])
   const [preview, setPreview] = useState<FlightPreview | null>(null)
 
   const { data: trips } = useQuery({ queryKey: ['trips'], queryFn: api.trips.list })
@@ -25,8 +29,15 @@ export function AddFlightPage(): React.ReactElement {
     setError('')
     setLooking(true)
     try {
-      const result = await api.flights.lookup(ident.toUpperCase().replace(/\s+/g, ''), date)
-      setPreview(result)
+      const clean = ident.toUpperCase().replace(/\s+/g, '')
+      const results = await api.flights.lookupAll(clean, date)
+      if (results.length === 1) {
+        setPreview(results[0])
+        setStep('confirm')
+      } else {
+        setLegs(results)
+        setStep('pick-leg')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not find that flight')
     } finally {
@@ -34,7 +45,13 @@ export function AddFlightPage(): React.ReactElement {
     }
   }
 
+  function handlePickLeg(leg: FlightPreview): void {
+    setPreview(leg)
+    setStep('confirm')
+  }
+
   async function handleConfirmAdd(): Promise<void> {
+    if (!preview) return
     setError('')
     setAdding(true)
     try {
@@ -42,6 +59,8 @@ export function AddFlightPage(): React.ReactElement {
         ident: ident.toUpperCase().replace(/\s+/g, ''),
         date,
         tripId: tripId || undefined,
+        origin: preview.origin,
+        dest: preview.destination,
       })
       await queryClient.invalidateQueries({ queryKey: ['flights'] })
       navigate(`/flights/${flight.id}`)
@@ -63,8 +82,7 @@ export function AddFlightPage(): React.ReactElement {
       {error && <div className="error-box" style={{ maxWidth: 480 }}>{error}</div>}
 
       <AnimatePresence mode="wait">
-        {!preview ? (
-          /* ── Step 1: look up ── */
+        {step === 'form' && (
           <motion.div
             key="form"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, x: -16 }}
@@ -118,10 +136,56 @@ export function AddFlightPage(): React.ReactElement {
               </div>
             </form>
           </motion.div>
-        ) : (
-          /* ── Step 2: confirm ── */
+        )}
+
+        {step === 'pick-leg' && (
           <motion.div
-            key="preview"
+            key="pick-leg"
+            initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            style={{ maxWidth: 480 }}
+          >
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+              {ident.toUpperCase()} operates multiple legs on this date. Which one is yours?
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {legs.map((leg) => {
+                const orig = getAirport(leg.origin)
+                const dest = getAirport(leg.destination)
+                return (
+                  <button
+                    key={`${leg.origin}-${leg.destination}`}
+                    className="secondary"
+                    onClick={() => handlePickLeg(leg)}
+                    style={{ textAlign: 'left', padding: '0.9rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}
+                  >
+                    <div>
+                      <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '1.1rem', letterSpacing: '0.05em' }}>
+                        {leg.origin} → {leg.destination}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                        {orig?.city ?? leg.origin} → {dest?.city ?? leg.destination}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '0.82rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+                      <div>{formatTime(leg.departureEstimated ?? leg.departureScheduled)}</div>
+                      <div style={{ fontSize: '0.72rem' }}>dep.</div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ marginTop: '1rem' }}>
+              <button type="button" className="secondary" onClick={() => { setStep('form'); setError('') }}>
+                ← Search again
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'confirm' && preview && (
+          <motion.div
+            key="confirm"
             initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
             style={{ maxWidth: 480 }}
@@ -181,8 +245,13 @@ export function AddFlightPage(): React.ReactElement {
                   </span>
                 ) : 'Add to my flights'}
               </button>
-              <button type="button" className="secondary" onClick={() => { setPreview(null); setError('') }} disabled={adding}>
-                Search again
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => { setStep(legs.length > 1 ? 'pick-leg' : 'form'); setError('') }}
+                disabled={adding}
+              >
+                ← Back
               </button>
             </div>
           </motion.div>

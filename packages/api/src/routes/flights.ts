@@ -2,13 +2,15 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { authMiddleware } from '../middleware/auth.js'
-import { lookupFlight } from '../services/flightAware.js'
+import { lookupFlight, lookupAllFlightLegs } from '../services/flightAware.js'
 import { getAircraftPosition } from '../services/openSky.js'
 
 const addFlightSchema = z.object({
   ident: z.string().min(2).max(10).toUpperCase(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   tripId: z.string().optional(),
+  origin: z.string().length(3).toUpperCase().optional(),
+  dest: z.string().length(3).toUpperCase().optional(),
 })
 
 const patchFlightSchema = z.object({
@@ -75,13 +77,27 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(data)
   })
 
+  // GET /api/flights/lookup-all — returns ALL legs for a flight number + date
+  // so the UI can show a leg picker when a flight number covers multiple routes.
+  app.get('/flights/lookup-all', async (req, reply) => {
+    const q = lookupQuerySchema.safeParse(req.query)
+    if (!q.success) return reply.code(400).send({ error: q.error.flatten() })
+
+    const legs = await lookupAllFlightLegs(q.data.ident.toUpperCase().replace(/\s+/g, ''), q.data.date)
+    if (legs.length === 0) return reply.code(404).send({ error: 'Flight not found' })
+    return reply.send(legs)
+  })
+
   // POST /api/flights
   app.post('/flights', async (req, reply) => {
     const userId = (req.user as { id: string }).id
     const body = addFlightSchema.safeParse(req.body)
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() })
 
-    const flightData = await lookupFlight(body.data.ident, body.data.date)
+    const flightData = await lookupFlight(body.data.ident, body.data.date, {
+      origin: body.data.origin,
+      dest: body.data.dest,
+    })
     if (!flightData) return reply.code(404).send({ error: 'Flight not found' })
 
     const flight = await prisma.flight.create({

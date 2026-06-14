@@ -134,6 +134,47 @@ function mapAdbFlight(f: AdbFlight, ident: string, date: string, origin?: string
 }
 
 /**
+ * Return ALL legs for a flight number + date. Used by the leg-picker UI so the
+ * user can choose the correct direction when a flight number covers multiple
+ * segments (e.g. DL2130: ORD→MSP and MSP→ORD on the same day).
+ */
+export async function lookupAllLegsAeroDataBox(
+  ident: string,
+  date: string,
+): Promise<FlightData[]> {
+  const key = await getAeroDataBoxKey()
+  if (!key) return []
+
+  const url = `${ADB_BASE}/flights/number/${encodeURIComponent(ident)}/${date}?withAircraftImage=false&withLocation=false`
+  await incrementUsage(ADB_PROVIDER)
+
+  let res: Response
+  try {
+    res = await fetch(url, {
+      headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': ADB_HOST },
+      signal: AbortSignal.timeout(12_000),
+    })
+  } catch (err) {
+    console.error('AeroDataBox request failed:', err)
+    return []
+  }
+
+  if (!res.ok) return []
+
+  const data = (await res.json().catch(() => null)) as AdbFlight[] | AdbFlight | null
+  if (!data) return []
+  const flights = Array.isArray(data) ? data : [data]
+
+  return flights
+    .map((f) => {
+      const depIata = f.departure?.airport?.iata
+      const arrIata = f.arrival?.airport?.iata
+      return mapAdbFlight(f, ident, date, depIata, arrIata)
+    })
+    .filter((f): f is FlightData => f !== null)
+}
+
+/**
  * Look up a real flight by number + date via AeroDataBox. Returns null if no
  * key is configured or no flight is found.
  *
