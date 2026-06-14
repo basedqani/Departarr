@@ -1266,3 +1266,45 @@ input:focus, select:focus, textarea:focus {
 .weather-label { font-size: 0.68rem; text-align: center; }
 .weather-wind { font-size: 0.68rem; }
 .weather-time { font-size: 0.68rem; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+
+/* ─── Trip Group ─── */
+.trip-group { margin-bottom: 0.75rem; }
+
+.trip-group-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0 0.1rem 0.35rem;
+}
+.trip-group-header:hover { text-decoration: underline; }
+
+.trip-group-body > div:first-child .card {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.trip-group-body > div:not(:first-child):not(:last-child) .card {
+  border-radius: 0;
+  border-top: none;
+}
+.trip-group-body > div:last-child .card {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top: none;
+}
+
+.trip-connection-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.trip-connection-line { flex: 1; height: 1px; background: currentColor; opacity: 0.2; }
+.trip-connection-text { white-space: nowrap; }

@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
+import { ConnectionBadge } from '../components/ConnectionBadge'
+import { TripGroup } from '../components/TripGroup'
+import { buildDisplayItems } from '../lib/tripGrouping'
 
 function getGreeting(): string {
   const h = new Date().getHours()
@@ -57,6 +60,14 @@ export function TodayPage(): React.ReactElement {
     refetchInterval: 60_000,
   })
 
+  const { data: connections } = useQuery({
+    queryKey: ['connections'],
+    queryFn: api.flights.connections,
+    refetchInterval: 60_000,
+  })
+
+  const displayItems = buildDisplayItems(flights ?? [])
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -86,9 +97,19 @@ export function TodayPage(): React.ReactElement {
         )}
       </AnimatePresence>
 
-      {flights?.map((f, i) => (
-        <FlightCard key={f.id} flight={f} index={i} />
-      ))}
+      {displayItems.map((item, i) => {
+        if (item.type === 'trip') {
+          return <TripGroup key={item.tripId} group={item} startIndex={i} />
+        }
+        const f = item.flight
+        const conn = connections?.find(c => c.flightId === f.id)
+        return (
+          <div key={f.id}>
+            <FlightCard flight={f} index={i} />
+            {conn && conn.risk !== 'green' && <ConnectionBadge conn={conn} />}
+          </div>
+        )
+      })}
     </motion.div>
   )
 }

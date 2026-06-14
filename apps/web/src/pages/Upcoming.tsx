@@ -1,30 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { api, type Flight, type ConnectionResult } from '../lib/api'
+import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
+import { ConnectionBadge } from '../components/ConnectionBadge'
+import { TripGroup } from '../components/TripGroup'
+import { buildDisplayItems } from '../lib/tripGrouping'
 import { formatDate } from '../lib/format'
-
-function ConnectionBadge({ conn }: { conn: ConnectionResult }): React.ReactElement {
-  const color = conn.risk === 'red' ? '#e53e3e' : '#d69e2e'
-  const icon = conn.risk === 'red' ? '⚠️' : '⏱'
-  const mins = conn.minutesAvailable
-  return (
-    <div
-      className="connection-badge"
-      style={
-        {
-          '--badge-color': color,
-          background: conn.risk === 'red' ? 'rgba(229,62,62,0.12)' : 'rgba(214,158,46,0.12)',
-          border: `1px solid ${conn.risk === 'red' ? 'rgba(229,62,62,0.35)' : 'rgba(214,158,46,0.35)'}`,
-        } as React.CSSProperties
-      }
-    >
-      {icon} {mins}m connection at {conn.airport}
-      {conn.risk === 'red' ? ' — AT RISK' : ' — Tight'}
-    </div>
-  )
-}
 
 function daysUntil(dateStr: string): number {
   const dep = new Date(dateStr)
@@ -42,14 +24,16 @@ function countdownLabel(dateStr: string): string {
   return 'Past'
 }
 
-function groupByDate(flights: Flight[]): Map<string, Flight[]> {
-  const groups = new Map<string, Flight[]>()
-  for (const f of flights) {
-    const key = f.departureScheduled.substring(0, 10)
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key)!.push(f)
+function getItemDateKey(item: ReturnType<typeof buildDisplayItems>[number]): string {
+  if (item.type === 'trip') {
+    return item.legs[0].departureScheduled.substring(0, 10)
   }
-  return groups
+  return item.flight.departureScheduled.substring(0, 10)
+}
+
+function getItemFirstDeparture(item: ReturnType<typeof buildDisplayItems>[number]): string {
+  if (item.type === 'trip') return item.legs[0].departureScheduled
+  return item.flight.departureScheduled
 }
 
 export function UpcomingPage(): React.ReactElement {
@@ -70,7 +54,17 @@ export function UpcomingPage(): React.ReactElement {
     refetchInterval: 60_000,
   })
 
-  const groups = flights ? groupByDate(flights) : new Map<string, Flight[]>()
+  const displayItems = buildDisplayItems(flights ?? [])
+
+  // Group display items by date
+  const dateGroups = new Map<string, ReturnType<typeof buildDisplayItems>>()
+  for (const item of displayItems) {
+    const key = getItemDateKey(item)
+    if (!dateGroups.has(key)) dateGroups.set(key, [])
+    dateGroups.get(key)!.push(item)
+  }
+
+  let globalIndex = 0
 
   return (
     <motion.div
@@ -121,23 +115,35 @@ export function UpcomingPage(): React.ReactElement {
         </div>
       )}
 
-      {([...groups.entries()] as [string, Flight[]][]).map(([dateKey, groupFlights], groupIdx) => (
-        <div key={dateKey} style={{ marginBottom: '0.5rem' }}>
-          <div className="date-group-header">
-            {formatDate(dateKey)}
-            <span className="countdown-chip">{countdownLabel(groupFlights[0].departureScheduled)}</span>
-          </div>
-          {groupFlights.map((f, i) => {
-            const conn = connections?.find(c => c.flightId === f.id)
-            return (
-              <div key={f.id}>
-                <FlightCard flight={f} index={groupIdx * 10 + i} />
-                {conn && conn.risk !== 'green' && <ConnectionBadge conn={conn} />}
+      {([...dateGroups.entries()] as [string, ReturnType<typeof buildDisplayItems>][]).map(
+        ([dateKey, items]) => {
+          const firstDeparture = getItemFirstDeparture(items[0])
+          return (
+            <div key={dateKey} style={{ marginBottom: '0.5rem' }}>
+              <div className="date-group-header">
+                {formatDate(dateKey)}
+                <span className="countdown-chip">{countdownLabel(firstDeparture)}</span>
               </div>
-            )
-          })}
-        </div>
-      ))}
+              {items.map(item => {
+                if (item.type === 'trip') {
+                  const idx = globalIndex
+                  globalIndex += item.legs.length
+                  return <TripGroup key={item.tripId} group={item} startIndex={idx} />
+                }
+                const f = item.flight
+                const conn = connections?.find(c => c.flightId === f.id)
+                const idx = globalIndex++
+                return (
+                  <div key={f.id}>
+                    <FlightCard flight={f} index={idx} />
+                    {conn && conn.risk !== 'green' && <ConnectionBadge conn={conn} />}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        }
+      )}
     </motion.div>
   )
 }
