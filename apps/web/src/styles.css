@@ -261,8 +261,8 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  overflow: hidden;
-  position: relative;
+  /* No overflow:hidden here — that traps position:fixed children on iOS Safari PWA.
+     Instead the flex column itself is the scroll container boundary. */
 }
 
 /* main content sits above bottom tab bar */
@@ -270,7 +270,8 @@ input:focus, select:focus, textarea:focus {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 1rem 1rem calc(5rem + env(safe-area-inset-bottom, 0px)) 1rem;
+  /* Bottom padding = just 1rem — tab bar is in-flow so no overlap */
+  padding: 1rem 1rem 1rem 1rem;
   max-width: 700px;
   margin: 0 auto;
   width: 100%;
@@ -278,15 +279,15 @@ input:focus, select:focus, textarea:focus {
 
 /* For FlightDetail which uses full-bleed globe — no top pad, header is hidden */
 .main-content.no-pad-top {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: 0;
 }
 
 /* ─────────────────────────────
    App header (logo bar)
    ───────────────────────────── */
 .app-header {
-  position: sticky;
-  top: 0;
+  /* In-flow flex child — never scrolls away, no position:sticky needed */
+  flex-shrink: 0;
   z-index: 100;
   display: flex;
   align-items: center;
@@ -296,7 +297,6 @@ input:focus, select:focus, textarea:focus {
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   backdrop-filter: blur(20px) saturate(1.4);
   border-bottom: 1px solid var(--hairline);
-  flex-shrink: 0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -321,15 +321,14 @@ input:focus, select:focus, textarea:focus {
    Bottom tab bar
    ───────────────────────────── */
 .tab-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  /* In-flow flex child at the bottom of .layout — never scrolls, always visible.
+     position:fixed inside overflow:hidden breaks on iOS Safari PWA. */
+  flex-shrink: 0;
   z-index: 200;
   display: flex;
   align-items: stretch;
-  height: calc(4rem + env(safe-area-inset-bottom));
-  padding-bottom: env(safe-area-inset-bottom);
+  height: calc(4rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   background: rgba(247,245,240,0.92);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   backdrop-filter: blur(20px) saturate(1.4);
