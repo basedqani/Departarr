@@ -23,9 +23,16 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Let navigations to /api (esp. the OAuth redirect endpoints) hit the
+        // network natively — the SW must NOT intercept them, or it returns a
+        // "redirected" response to a navigation and the browser shows a blank
+        // page. Excludes /api from the SPA navigation fallback…
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
-            urlPattern: /^\/api\//,
+            // …and only cache /api *data* requests, never /api/auth/* (OAuth
+            // 302s must pass straight through to the browser).
+            urlPattern: /^\/api\/(?!auth\/)/,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
