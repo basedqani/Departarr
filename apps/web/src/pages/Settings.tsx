@@ -278,7 +278,7 @@ export function SettingsPage(): React.ReactElement {
               <span style={{
                 fontSize: '0.68rem',
                 fontWeight: 700,
-                background: 'rgba(77,168,255,0.15)',
+                background: 'var(--accent-dim)',
                 color: 'var(--accent)',
                 borderRadius: 99,
                 padding: '0.2rem 0.6rem',
@@ -451,7 +451,7 @@ export function SettingsPage(): React.ReactElement {
           <span style={{
             fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
             borderRadius: 99, padding: '0.2rem 0.6rem', flexShrink: 0,
-            background: features?.liveData ? 'rgba(52,211,153,0.15)' : 'rgba(77,168,255,0.15)',
+            background: features?.liveData ? 'rgba(61,220,151,0.15)' : 'var(--accent-2-dim)',
             color: features?.liveData ? 'var(--on-time)' : 'var(--accent)',
           }}>
             {features?.liveData ? 'Live' : 'Demo'}

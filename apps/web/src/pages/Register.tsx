@@ -53,7 +53,7 @@ export function RegisterPage(): React.ReactElement {
     <div className="auth-page">
       <div style={{
         position: 'fixed', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 0,
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(77,168,255,0.06) 0%, transparent 60%)',
+        background: 'radial-gradient(ellipse at 50% 0%, rgba(245,166,35,0.07) 0%, transparent 60%)',
       }} />
 
       <motion.div

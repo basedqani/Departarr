@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import type { Flight } from '../lib/api'
 import { StatusBadge } from './StatusBadge'
 import { formatTime, formatDate } from '../lib/format'
+import { getAirline } from '../lib/airlines'
 import { useCountdown } from '../hooks/useCountdown'
 
 interface Props {
@@ -11,9 +12,22 @@ interface Props {
   index?: number
 }
 
-function PlaneGlyph(): React.ReactElement {
+// Brand colors for major carriers, keyed by 2-letter IATA prefix.
+const AIRLINE_COLORS: Record<string, string> = {
+  DL: '#003366', AA: '#0078D2', UA: '#005daa', BA: '#075aaa',
+  LH: '#05164d', AF: '#002157', NH: '#13448f', EK: '#d71921',
+  QF: '#e0001b', AC: '#d22630', KL: '#00a1de', IB: '#d40f14',
+  SQ: '#f99f1c', CX: '#006564', VS: '#e10a0a',
+}
+
+function airlineColor(flight: Flight): string {
+  const prefix = (flight.airlineIata ?? flight.ident).slice(0, 2).toUpperCase()
+  return AIRLINE_COLORS[prefix] ?? 'var(--accent)'
+}
+
+function RouteLine(): React.ReactElement {
   return (
-    <span className="flight-route-glyph">
+    <span className="flight-route-line">
       <svg viewBox="0 0 24 24" fill="currentColor">
         <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" />
       </svg>
@@ -48,7 +62,7 @@ function countdownBg(flight: Flight): string {
   const diff = depTime - Date.now()
   const hasDeparted = !!flight.departureActual || st === 'en-route' || st === 'departed'
   if (!hasDeparted && diff < 30 * 60 * 1000) return 'rgba(251,191,36,0.12)'
-  return 'rgba(77,168,255,0.12)'
+  return 'var(--accent-dim)'
 }
 
 function CountdownChip({ flight }: { flight: Flight }): React.ReactElement {
@@ -75,6 +89,8 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
   const depTime = flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled
   const arrTime = flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled
   const progress = flightProgress(flight)
+  const color = airlineColor(flight)
+  const airlineName = getAirline(flight.airlineIata ?? flight.ident.slice(0, 2))?.name
 
   return (
     <motion.div
@@ -84,12 +100,12 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
       whileTap={{ scale: 0.98 }}
     >
       <Link to={`/flights/${flight.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-        <div className="card card-hover flight-card">
+        <div className="card card-hover flight-card" style={{ '--airline-color': color } as React.CSSProperties}>
           {/* Top row: route + countdown */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
             <div className="flight-route">
               <span>{flight.origin}</span>
-              <PlaneGlyph />
+              <RouteLine />
               <span>{flight.destination}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem', flexShrink: 0 }}>
@@ -98,9 +114,14 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
             </div>
           </div>
 
+          <div className="flight-perforation" />
+
           {/* Meta row */}
           <div className="flight-meta-row">
             <span className="flight-meta-ident">{flight.ident}</span>
+            {airlineName && (
+              <span className="flight-meta-chip flight-meta-chip-dim">{airlineName}</span>
+            )}
             {showDate && (
               <span className="flight-meta-chip">{formatDate(flight.departureScheduled)}</span>
             )}

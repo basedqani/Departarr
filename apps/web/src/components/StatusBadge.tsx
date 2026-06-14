@@ -10,9 +10,11 @@ export function StatusBadge({ status }: Props): React.ReactElement {
     'landed', 'arrived', 'delayed', 'cancelled', 'diverted',
   ]
   const cls = knownStatuses.includes(normalized) ? normalized : 'unknown'
+  const isLive = normalized === 'boarding' || normalized === 'departed' || normalized === 'en-route'
 
   return (
     <span className={`badge badge-${cls}`}>
+      {isLive && <span className="badge-live-dot" />}
       {status.replace(/_/g, ' ')}
     </span>
   )

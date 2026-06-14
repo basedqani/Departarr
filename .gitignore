@@ -10,3 +10,7 @@ data/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# local tooling (cloudflared)
+.tools/
+.tmp_*

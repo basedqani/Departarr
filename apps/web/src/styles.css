@@ -11,30 +11,37 @@
    ───────────────────────────── */
 :root {
   /* backgrounds */
-  --bg:             #05080f;
-  --surface:        #0d1320;
-  --surface-raised: #131b2c;
-  --surface-hover:  #1a2440;
+  --bg:             #050911;
+  --surface:        #0c1322;
+  --surface-raised: #121b2e;
+  --surface-hover:  #1a2540;
 
   /* borders */
-  --hairline:       rgba(255, 255, 255, 0.07);
-  --border:         rgba(255, 255, 255, 0.07);
+  --hairline:       rgba(180,200,255,0.08);
+  --border:         rgba(180,200,255,0.08);
 
   /* text */
-  --text:           #e8edf5;
-  --text-muted:     #8899bb;
-  --text-dim:       rgba(232, 237, 245, 0.45);
+  --text:           #eef2fa;
+  --text-muted:     #8d9bbd;
+  --text-dim:       rgba(238,242,250,0.42);
 
-  /* accent */
-  --accent:         #4da8ff;
-  --accent-dim:     rgba(77, 168, 255, 0.18);
-  --accent-hover:   #6ab8ff;
+  /* accent — departure-board amber */
+  --accent:         #f5a623;
+  --accent-dim:     rgba(245,166,35,0.16);
+  --accent-hover:   #ffb84d;
+
+  /* secondary — teal: in-motion */
+  --accent-2:       #4ec9d6;
+  --accent-2-dim:   rgba(78,201,214,0.16);
 
   /* status */
-  --on-time:        #34d399;
+  --on-time:        #3ddc97;
   --delayed:        #fbbf24;
-  --cancelled:      #f87171;
+  --cancelled:      #fb6b6b;
   --muted-status:   #94a3b8;
+
+  /* glow */
+  --glow-accent:    0 4px 20px rgba(245,166,35,0.30);
 
   /* shadows */
   --shadow-sm:      0 1px 3px rgba(0,0,0,0.4);
@@ -48,6 +55,7 @@
 
   /* font */
   --font: 'Inter Variable', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
 }
 
 /* ─────────────────────────────
@@ -55,15 +63,21 @@
    ───────────────────────────── */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg:             #f0f4fc;
+    --bg:             #f4f7fd;
     --surface:        #ffffff;
-    --surface-raised: #f5f8ff;
+    --surface-raised: #f4f7fd;
     --surface-hover:  #eef2fc;
     --hairline:       rgba(0,0,0,0.07);
     --border:         rgba(0,0,0,0.07);
-    --text:           #111827;
-    --text-muted:     #6b7280;
-    --text-dim:       rgba(17,24,39,0.45);
+    --text:           #0f1830;
+    --text-muted:     #5a6685;
+    --text-dim:       rgba(15,24,48,0.45);
+    --accent:         #c97a12;
+    --accent-dim:     rgba(201,122,18,0.14);
+    --accent-hover:   #b06a0c;
+    --accent-2:       #1f97a6;
+    --accent-2-dim:   rgba(31,151,166,0.14);
+    --glow-accent:    0 4px 20px rgba(201,122,18,0.22);
     --shadow:         0 4px 24px rgba(0,0,0,0.08);
     --shadow-lg:      0 8px 40px rgba(0,0,0,0.12);
   }
@@ -218,6 +232,17 @@ input:focus, select:focus, textarea:focus {
 }
 .tab-item:hover { text-decoration: none; color: var(--text); }
 .tab-item.active { color: var(--accent); }
+.tab-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 2.5px;
+  border-radius: 0 0 2px 2px;
+  background: var(--accent);
+}
 
 .tab-item svg {
   width: 22px;
@@ -241,7 +266,7 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px rgba(77, 168, 255, 0.4);
+  box-shadow: var(--glow-accent);
   transition: transform 0.15s, box-shadow 0.15s;
   margin-bottom: 1rem;
   -webkit-tap-highlight-color: transparent;
@@ -249,7 +274,7 @@ input:focus, select:focus, textarea:focus {
 }
 .tab-add-circle:hover {
   transform: scale(1.06);
-  box-shadow: 0 6px 20px rgba(77, 168, 255, 0.55);
+  box-shadow: 0 6px 24px rgba(245,166,35,0.45);
   text-decoration: none;
 }
 .tab-add-circle svg {
@@ -273,28 +298,103 @@ input:focus, select:focus, textarea:focus {
   white-space: nowrap;
 }
 .badge-scheduled { background: rgba(148,163,184,0.15); color: var(--muted-status); }
-.badge-boarding   { background: rgba(251,191,36,0.15);  color: var(--delayed); }
-.badge-departed   { background: rgba(77,168,255,0.15);  color: var(--accent); }
-.badge-en-route   { background: rgba(77,168,255,0.15);  color: var(--accent); }
-.badge-landed     { background: rgba(52,211,153,0.15);  color: var(--on-time); }
-.badge-arrived    { background: rgba(52,211,153,0.15);  color: var(--on-time); }
+.badge-boarding   { background: var(--accent-2-dim);    color: var(--accent-2); }
+.badge-departed   { background: var(--accent-2-dim);    color: var(--accent-2); }
+.badge-en-route   { background: var(--accent-2-dim);    color: var(--accent-2); }
+.badge-landed     { background: rgba(61,220,151,0.15);  color: var(--on-time); }
+.badge-arrived    { background: rgba(61,220,151,0.15);  color: var(--on-time); }
 .badge-delayed    { background: rgba(251,191,36,0.15);  color: var(--delayed); }
-.badge-cancelled  { background: rgba(248,113,113,0.15); color: var(--cancelled); }
-.badge-diverted   { background: rgba(248,113,113,0.15); color: var(--cancelled); }
+.badge-cancelled  { background: rgba(251,107,107,0.15); color: var(--cancelled); }
+.badge-diverted   { background: rgba(251,107,107,0.15); color: var(--cancelled); }
 .badge-unknown    { background: rgba(148,163,184,0.15); color: var(--muted-status); }
+
+/* Pulsing live dot for in-motion states */
+.badge-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 0.4rem;
+  flex-shrink: 0;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 /* ─────────────────────────────
    Flight card
    ───────────────────────────── */
 .flight-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 1.125rem 1.25rem;
+  padding: 1.125rem 1.25rem 1.125rem 1.4rem;
   margin-bottom: 0.75rem;
   cursor: pointer;
+  overflow: hidden;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Airline-color rail down the left edge (boarding-pass stub) */
+.flight-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--airline-color, var(--accent));
+}
+
+/* Great-circle line between origin/destination codes */
+.flight-route-line {
+  flex: 1;
+  min-width: 1.5rem;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.flight-route-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: repeating-linear-gradient(90deg, var(--text-dim) 0 4px, transparent 4px 8px);
+}
+.flight-route-line svg {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  color: var(--accent-2);
+  background: var(--surface);
+  padding: 0 2px;
+}
+
+/* Perforation divider with corner notches */
+.flight-perforation {
+  position: relative;
+  height: 0;
+  border-top: 1px dashed var(--hairline);
+  margin: 0.1rem 0;
+}
+.flight-perforation::before,
+.flight-perforation::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg);
+  transform: translateY(-50%);
+}
+.flight-perforation::before { left: -1.4rem; }
+.flight-perforation::after  { right: -1.25rem; }
 
 .flight-route {
   display: flex;
@@ -302,8 +402,18 @@ input:focus, select:focus, textarea:focus {
   gap: 0.6rem;
   font-size: 1.6rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
   line-height: 1;
+  flex: 1;
+  min-width: 0;
+}
+
+.flight-route span,
+.detail-route span,
+.time-iata,
+.flight-meta-ident {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .flight-route-glyph {
@@ -392,10 +502,10 @@ input:focus, select:focus, textarea:focus {
 }
 .flight-progress-fill {
   height: 100%;
-  background: var(--accent);
+  background: var(--accent-2);
   border-radius: 99px;
   transition: width 0.6s ease;
-  box-shadow: 0 0 6px var(--accent);
+  box-shadow: 0 0 6px var(--accent-2);
 }
 
 /* ─────────────────────────────
@@ -525,7 +635,7 @@ input:focus, select:focus, textarea:focus {
   gap: 0.875rem;
   font-size: 2.2rem;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: 0.02em;
   line-height: 1;
   margin-bottom: 0.375rem;
 }
@@ -607,9 +717,9 @@ input:focus, select:focus, textarea:focus {
   left: 0;
   top: 0;
   height: 100%;
-  background: var(--accent);
+  background: var(--accent-2);
   border-radius: 99px;
-  box-shadow: 0 0 8px var(--accent);
+  box-shadow: 0 0 8px var(--accent-2);
   transition: width 0.8s ease;
   min-width: 4px;
 }
@@ -617,9 +727,9 @@ input:focus, select:focus, textarea:focus {
   position: absolute;
   top: 50%;
   transform: translateY(-50%) translateX(-50%);
-  color: var(--accent);
+  color: var(--accent-2);
   font-size: 14px;
-  filter: drop-shadow(0 0 4px var(--accent));
+  filter: drop-shadow(0 0 4px var(--accent-2));
   transition: left 0.8s ease;
   pointer-events: none;
 }

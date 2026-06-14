@@ -77,7 +77,7 @@ function SharePushButton({ token }: { token: string }): React.ReactElement | nul
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         gap: '0.5rem', width: '100%', marginTop: '1rem',
         padding: '0.75rem', borderRadius: 12, cursor: 'pointer',
-        background: 'rgba(77,168,255,0.1)', border: '1px solid rgba(77,168,255,0.2)',
+        background: 'var(--accent-dim)', border: '1px solid rgba(245,166,35,0.25)',
         color: 'var(--accent)', fontSize: '0.875rem', fontWeight: 600,
       }}
     >
@@ -169,8 +169,8 @@ export function SharePage(): React.ReactElement {
             />
           </Suspense>
           {isLive && (
-            <div style={{ position: 'absolute', top: '0.75rem', right: '1rem', zIndex: 10, background: 'rgba(77,168,255,0.15)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(77,168,255,0.3)', borderRadius: 999, padding: '0.35rem 0.75rem', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', boxShadow: '0 0 4px var(--accent)' }} />
+            <div style={{ position: 'absolute', top: '0.75rem', right: '1rem', zIndex: 10, background: 'var(--accent-2-dim)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(78,201,214,0.3)', borderRadius: 999, padding: '0.35rem 0.75rem', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent-2)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span className="badge-live-dot" style={{ margin: 0, boxShadow: '0 0 4px var(--accent-2)' }} />
               LIVE
             </div>
           )}

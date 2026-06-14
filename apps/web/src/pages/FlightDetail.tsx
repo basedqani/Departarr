@@ -197,7 +197,7 @@ function IconTicket(): React.ReactElement {
 function getConnectionRating(minutes: number): { label: string; color: string; bgColor: string } {
   if (minutes < 45) return { label: 'Risky',   color: 'var(--cancelled)', bgColor: 'rgba(248,113,113,0.12)' }
   if (minutes < 60) return { label: 'Tight',   color: '#FF9500',          bgColor: 'rgba(255,149,0,0.12)' }
-  if (minutes < 90) return { label: 'Normal',  color: 'var(--accent)',    bgColor: 'rgba(77,168,255,0.12)' }
+  if (minutes < 90) return { label: 'Normal',  color: 'var(--accent-2)',  bgColor: 'var(--accent-2-dim)' }
   return               { label: 'Relaxed', color: 'var(--on-time)',  bgColor: 'rgba(52,211,153,0.12)' }
 }
 
@@ -742,21 +742,21 @@ export function FlightDetailPage(): React.ReactElement {
             top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
             right: '1rem',
             zIndex: 10,
-            background: 'rgba(77,168,255,0.15)',
+            background: 'var(--accent-2-dim)',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
-            border: '1px solid rgba(77,168,255,0.3)',
+            border: '1px solid rgba(78,201,214,0.3)',
             borderRadius: '999px',
             padding: '0.35rem 0.75rem',
             fontSize: '0.72rem',
             fontWeight: 700,
             letterSpacing: '0.08em',
-            color: 'var(--accent)',
+            color: 'var(--accent-2)',
             display: 'flex',
             alignItems: 'center',
             gap: '0.35rem',
           }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', boxShadow: '0 0 4px var(--accent)' }} />
+            <span className="badge-live-dot" style={{ margin: 0, boxShadow: '0 0 4px var(--accent-2)' }} />
             LIVE
           </div>
         )}
@@ -825,11 +825,11 @@ export function FlightDetailPage(): React.ReactElement {
               <span style={{
                 fontSize: '0.72rem',
                 fontWeight: 600,
-                background: 'rgba(77,168,255,0.1)',
-                border: '1px solid rgba(77,168,255,0.2)',
+                background: 'var(--accent-2-dim)',
+                border: '1px solid rgba(78,201,214,0.2)',
                 borderRadius: 99,
                 padding: '0.18rem 0.55rem',
-                color: 'var(--accent)',
+                color: 'var(--accent-2)',
                 letterSpacing: '0.02em',
               }}>
                 {tzShift}
