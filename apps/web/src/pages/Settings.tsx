@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
@@ -192,6 +192,16 @@ export function SettingsPage(): React.ReactElement {
   const [syncLoading, setSyncLoading] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
+  // Detect an existing push subscription on mount so "Enabled" persists across reloads
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+    void navigator.serviceWorker.ready.then((reg) => {
+      return reg.pushManager.getSubscription()
+    }).then((sub) => {
+      if (sub) setPushSuccess(true)
+    })
+  }, [])
+
   const [searchParams, setSearchParams] = useSearchParams()
   const calendarStatus = searchParams.get('calendar')
 
@@ -368,7 +378,18 @@ export function SettingsPage(): React.ReactElement {
             <div className="settings-row-sub">Gate changes, delays, and baggage claim info.<br />Requires iOS 16.4+ when installed as PWA.</div>
           </div>
           {pushSuccess ? (
-            <span style={{ color: 'var(--on-time)', fontSize: '0.8rem', fontWeight: 600 }}>Enabled</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+              <span style={{ color: 'var(--on-time)', fontSize: '0.8rem', fontWeight: 600 }}>Enabled</span>
+              <button
+                className="secondary"
+                onClick={() => {
+                  api.push.test().then(() => alert('Test notification sent!')).catch((err) => alert(err instanceof Error ? err.message : 'Failed to send test'))
+                }}
+                style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+              >
+                Send test
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => void handleEnableNotifications()}

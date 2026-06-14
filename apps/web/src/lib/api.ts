@@ -101,6 +101,7 @@ export const api = {
       request<void>('/push/subscribe', { method: 'POST', body: JSON.stringify(sub) }),
     unsubscribe: (endpoint: string) =>
       request<void>('/push/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint }) }),
+    test: () => request<{ ok: boolean }>('/push/test', { method: 'POST' }),
   },
 
   calendar: {

@@ -86,8 +86,8 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
 
   const calendar = google.calendar({ version: 'v3', auth: oauth2Client })
 
-  // Fetch events from now to 6 months out
-  const timeMin = new Date().toISOString()
+  // Fetch events from 12 months back to 6 months out
+  const timeMin = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
   const timeMax = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString()
 
   let pageToken: string | undefined

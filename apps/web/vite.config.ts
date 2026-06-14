@@ -23,6 +23,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ['push-handler.js'],
         // Let navigations to /api (esp. the OAuth redirect endpoints) hit the
         // network natively — the SW must NOT intercept them, or it returns a
         // "redirected" response to a navigation and the browser shows a blank
