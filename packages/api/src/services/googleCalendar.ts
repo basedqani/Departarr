@@ -158,6 +158,12 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
                 // covers active/near-future flights).
                 const depDate = new Date(date + 'T12:00:00Z')
                 if (depDate < new Date()) {
+                  // Skip stub if we have no route hint — a record with blank
+                  // origin/destination is worse than no record at all.
+                  if (!flight.origin || !flight.dest) {
+                    console.log(`[calendar] Skipping stub for ${flight.ident} — no route hint available`)
+                    continue
+                  }
                   await prisma.flight.create({
                     data: {
                       userId,
@@ -165,8 +171,8 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
                       faFlightId: null,
                       airlineIata: flight.airlineCode ?? null,
                       flightNumber: flight.flightNumber ?? null,
-                      origin: flight.origin ?? '',
-                      destination: flight.dest ?? '',
+                      origin: flight.origin,
+                      destination: flight.dest,
                       departureScheduled: depDate,
                       arrivalScheduled: new Date(depDate.getTime() + 2 * 60 * 60 * 1000),
                       status: 'arrived',
