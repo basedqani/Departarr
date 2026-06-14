@@ -187,6 +187,14 @@ function ToggleRow({ label, hint, checked, onChange }: ToggleRowProps): React.Re
 export function SettingsPage(): React.ReactElement {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [adminMode, setAdminMode] = useState(() =>
+    localStorage.getItem('adminMode') !== 'false'
+  )
+  const toggleAdminMode = (): void => {
+    const next = !adminMode
+    setAdminMode(next)
+    localStorage.setItem('adminMode', String(next))
+  }
   const [pushLoading, setPushLoading] = useState(false)
   const [pushSuccess, setPushSuccess] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
@@ -277,6 +285,17 @@ export function SettingsPage(): React.ReactElement {
     >
       <div className="page-header">
         <h1>Settings</h1>
+      </div>
+
+      <div className="settings-admin-toggle">
+        <span>Admin mode</span>
+        <button
+          className={`toggle-btn${adminMode ? ' active' : ''}`}
+          onClick={toggleAdminMode}
+          aria-label="Toggle admin mode"
+        >
+          <span className="toggle-knob" />
+        </button>
       </div>
 
       {/* Account */}
@@ -384,15 +403,17 @@ export function SettingsPage(): React.ReactElement {
           {pushSuccess ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
               <span style={{ color: 'var(--on-time)', fontSize: '0.8rem', fontWeight: 600 }}>Enabled</span>
-              <button
-                className="secondary"
-                onClick={() => {
-                  api.push.test().then(() => alert('Test notification sent!')).catch((err) => alert(err instanceof Error ? err.message : 'Failed to send test'))
-                }}
-                style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
-              >
-                Send test
-              </button>
+              {adminMode && (
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    api.push.test().then(() => alert('Test notification sent!')).catch((err) => alert(err instanceof Error ? err.message : 'Failed to send test'))
+                  }}
+                  style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                >
+                  Send test
+                </button>
+              )}
             </div>
           ) : (
             <button
@@ -405,7 +426,7 @@ export function SettingsPage(): React.ReactElement {
           )}
         </div>
 
-        {pushSuccess && allFlights && allFlights.length > 0 && (
+        {adminMode && pushSuccess && allFlights && allFlights.length > 0 && (
           <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem' }}>
             <div>
               <div className="settings-row-label">Simulate flight lifecycle</div>
@@ -491,7 +512,7 @@ export function SettingsPage(): React.ReactElement {
             </button>
           )}
         </div>
-        {features?.googleCalendar && (
+        {adminMode && features?.googleCalendar && (
           <div className="settings-row">
             <div className="settings-row-label">Sync now</div>
             <button className="secondary" onClick={() => void handleCalendarSync()} disabled={syncLoading} style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
@@ -499,7 +520,7 @@ export function SettingsPage(): React.ReactElement {
             </button>
           </div>
         )}
-        {syncResult && (
+        {adminMode && syncResult && (
           <div style={{ padding: '0.5rem 1rem 0.875rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{syncResult}</div>
         )}
       </div>
