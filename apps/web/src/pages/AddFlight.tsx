@@ -4,7 +4,7 @@ import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api, type FlightPreview } from '../lib/api'
 import { getAirport } from '../lib/airports'
-import { formatTime } from '../lib/format'
+import { formatLocalTime, getAirportTz } from '../lib/format'
 import { StatusBadge } from '../components/StatusBadge'
 
 type Step = 'form' | 'pick-leg' | 'confirm'
@@ -35,7 +35,14 @@ export function AddFlightPage(): React.ReactElement {
         setPreview(results[0])
         setStep('confirm')
       } else {
-        setLegs(results)
+        // Sort legs by departure time, closest to now first
+        const now = Date.now()
+        const sorted = [...results].sort((a, b) => {
+          const aTime = new Date(a.departureEstimated ?? a.departureScheduled).getTime()
+          const bTime = new Date(b.departureEstimated ?? b.departureScheduled).getTime()
+          return Math.abs(aTime - now) - Math.abs(bTime - now)
+        })
+        setLegs(sorted)
         setStep('pick-leg')
       }
     } catch (err) {
@@ -72,6 +79,8 @@ export function AddFlightPage(): React.ReactElement {
 
   const originAirport = preview ? getAirport(preview.origin) : null
   const destAirport = preview ? getAirport(preview.destination) : null
+  const originTz = preview ? getAirportTz(preview.origin) : undefined
+  const destTz = preview ? getAirportTz(preview.destination) : undefined
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
@@ -146,30 +155,77 @@ export function AddFlightPage(): React.ReactElement {
             style={{ maxWidth: 480 }}
           >
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              {ident.toUpperCase()} operates multiple legs on this date. Which one is yours?
+              <strong style={{ color: 'var(--text)' }}>{ident.toUpperCase()}</strong> operates {legs.length} legs on this date. Which one is yours?
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {legs.map((leg) => {
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              {legs.map((leg, i) => {
                 const orig = getAirport(leg.origin)
                 const dest = getAirport(leg.destination)
+                const depTime = leg.departureEstimated ?? leg.departureScheduled
+                const arrTime = leg.arrivalEstimated ?? leg.arrivalScheduled
+                const originTz = getAirportTz(leg.origin)
+                const isClosest = i === 0
                 return (
                   <button
-                    key={`${leg.origin}-${leg.destination}`}
-                    className="secondary"
+                    key={`${leg.origin}-${leg.destination}-${depTime}`}
                     onClick={() => handlePickLeg(leg)}
-                    style={{ textAlign: 'left', padding: '0.9rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}
+                    style={{
+                      textAlign: 'left',
+                      padding: '1rem 1.1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '1rem',
+                      background: 'var(--card-bg)',
+                      border: isClosest
+                        ? '1.5px solid var(--accent)'
+                        : '1.5px solid var(--border)',
+                      borderRadius: 'var(--radius)',
+                      cursor: 'pointer',
+                      width: '100%',
+                      transition: 'border-color 0.15s, box-shadow 0.15s',
+                    }}
                   >
-                    <div>
-                      <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '1.1rem', letterSpacing: '0.05em' }}>
-                        {leg.origin} → {leg.destination}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '1.05rem', letterSpacing: '0.05em' }}>
+                          {leg.origin}
+                        </span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>›</span>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '1.05rem', letterSpacing: '0.05em' }}>
+                          {leg.destination}
+                        </span>
+                        {isClosest && (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            letterSpacing: '0.05em',
+                            color: 'var(--accent)',
+                            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '999px',
+                            textTransform: 'uppercase',
+                          }}>
+                            Closest
+                          </span>
+                        )}
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                         {orig?.city ?? leg.origin} → {dest?.city ?? leg.destination}
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: '0.82rem', color: 'var(--text-muted)', flexShrink: 0 }}>
-                      <div>{formatTime(leg.departureEstimated ?? leg.departureScheduled)}</div>
-                      <div style={{ fontSize: '0.72rem' }}>dep.</div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '1rem', fontFamily: 'monospace', letterSpacing: '0.04em' }}>
+                        {formatLocalTime(depTime, originTz)}
+                      </div>
+                      {arrTime && (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                          → {formatLocalTime(arrTime, getAirportTz(leg.destination))}
+                        </div>
+                      )}
+                      <div style={{ marginTop: '0.25rem' }}>
+                        <StatusBadge status={leg.status} />
+                      </div>
                     </div>
                   </button>
                 )
@@ -215,11 +271,11 @@ export function AddFlightPage(): React.ReactElement {
               <div className="info-grid" style={{ marginTop: 0 }}>
                 <div className="info-cell">
                   <div className="info-cell-label">Departure</div>
-                  <div className="info-cell-value">{formatTime(preview.departureEstimated ?? preview.departureScheduled)}</div>
+                  <div className="info-cell-value">{formatLocalTime(preview.departureEstimated ?? preview.departureScheduled, originTz)}</div>
                 </div>
                 <div className="info-cell">
                   <div className="info-cell-label">Arrival</div>
-                  <div className="info-cell-value">{formatTime(preview.arrivalEstimated ?? preview.arrivalScheduled)}</div>
+                  <div className="info-cell-value">{formatLocalTime(preview.arrivalEstimated ?? preview.arrivalScheduled, destTz)}</div>
                 </div>
                 {preview.gateDeparture && (
                   <div className="info-cell">
