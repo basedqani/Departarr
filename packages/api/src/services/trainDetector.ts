@@ -30,6 +30,111 @@ const AMTRAK_KEYWORDS = [
 export interface DetectedTrain {
   trainNumber: string
   rawMatch: string
+  boardingStation?: string  // Amtrak station code if we can detect where they're boarding
+}
+
+// ── Station detection ─────────────────────────────────────────────────────
+
+// Maps city names, station names, and partial street addresses to Amtrak codes.
+// Keyed lowercase for case-insensitive matching.
+const STATION_HINTS: Record<string, string> = {
+  // Street address fragments
+  'kellogg': 'STP',        // 214 Kellogg Blvd E, St. Paul
+  'canal st': 'NOL',       // New Orleans
+  '30th st': 'PHL',
+  'union station': '',      // too ambiguous alone — need city context
+  'penn station': 'NYP',
+  'penn st': 'NYP',
+
+  // City / neighborhood names → Amtrak code
+  'saint paul': 'STP',
+  'st. paul': 'STP',
+  'st paul': 'STP',
+  'minneapolis': 'MSP',
+  'chicago': 'CHI',
+  'new york': 'NYP',
+  'washington': 'WAS',
+  'washington dc': 'WAS',
+  'boston': 'BOS',
+  'philadelphia': 'PHL',
+  'los angeles': 'LAX',
+  'san francisco': 'EMY',
+  'emeryville': 'EMY',
+  'oakland': 'OKJ',
+  'seattle': 'SEA',
+  'portland': 'PDX',
+  'new orleans': 'NOL',
+  'miami': 'MIA',
+  'orlando': 'ORL',
+  'atlanta': 'ATL',
+  'charlotte': 'CLT',
+  'raleigh': 'RGH',
+  'richmond': 'RVR',
+  'baltimore': 'BAL',
+  'newark': 'NWK',
+  'providence': 'PVD',
+  'new haven': 'NHV',
+  'hartford': 'HDN',
+  'springfield': 'SPG',
+  'albany': 'ALB',
+  'buffalo': 'BUF',
+  'rochester': 'ROC',
+  'syracuse': 'SYR',
+  'pittsburgh': 'PIT',
+  'cleveland': 'CLE',
+  'toledo': 'TOL',
+  'detroit': 'DET',
+  'ann arbor': 'ARB',
+  'kalamazoo': 'KAL',
+  'milwaukee': 'MKE',
+  'kansas city': 'KCY',
+  'st. louis': 'STL',
+  'saint louis': 'STL',
+  'st louis': 'STL',
+  'denver': 'DEN',
+  'salt lake city': 'SLC',
+  'reno': 'RNO',
+  'sacramento': 'SAC',
+  'san jose': 'SJC',
+  'san diego': 'SAN',
+  'santa barbara': 'SBA',
+  'tucson': 'TUS',
+  'el paso': 'ELP',
+  'san antonio': 'SAT',
+  'austin': 'AUS',
+  'dallas': 'DAL',
+  'fort worth': 'FTW',
+  'oklahoma city': 'OKC',
+  'albuquerque': 'ABQ',
+  'flagstaff': 'FLG',
+  'spokane': 'SPK',
+  'portland or': 'PDX',
+  'tacoma': 'TAC',
+  'olympia': 'OLY',
+}
+
+/**
+ * Try to extract a boarding station code from calendar event text.
+ * Checks location field first (most reliable), then description/summary.
+ */
+export function detectBoardingStation(event: {
+  summary?: string | null
+  description?: string | null
+  location?: string | null
+}): string | undefined {
+  const fields = [event.location, event.description, event.summary].filter(Boolean) as string[]
+
+  for (const field of fields) {
+    const lower = field.toLowerCase()
+    // Check longest matches first to avoid "st" matching inside "street"
+    const sortedKeys = Object.keys(STATION_HINTS).sort((a, b) => b.length - a.length)
+    for (const hint of sortedKeys) {
+      if (lower.includes(hint) && STATION_HINTS[hint]) {
+        return STATION_HINTS[hint]
+      }
+    }
+  }
+  return undefined
 }
 
 // ── Detection ─────────────────────────────────────────────────────────────
@@ -105,5 +210,11 @@ export function detectTrainsInEvent(event: {
   const combined = [event.summary, event.description, event.location]
     .filter(Boolean)
     .join(' ')
-  return detectTrainsInText(combined)
+  const trains = detectTrainsInText(combined)
+  const boardingStation = detectBoardingStation(event)
+  // Attach the boarding station to every detected train from this event
+  if (boardingStation) {
+    return trains.map(t => ({ ...t, boardingStation }))
+  }
+  return trains
 }

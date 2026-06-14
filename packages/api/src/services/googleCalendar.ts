@@ -247,17 +247,42 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
               const schedule = await lookupTrainSchedule(detected.trainNumber, eventDate)
               if (!schedule) continue
 
+              // If we detected a boarding station from the event location/description,
+              // use it as origin if it appears in the route (so e.g. boarding at STP
+              // on the Empire Builder shows STP→SEA not CHI→SEA).
+              let origin = schedule.origin
+              let originName = schedule.originName ?? null
+              let departureScheduled = schedule.departureScheduled
+
+              if (detected.boardingStation && detected.boardingStation !== schedule.origin) {
+                const boardingStop = schedule.stops.find(
+                  s => s.code.toUpperCase() === detected.boardingStation!.toUpperCase()
+                )
+                if (boardingStop) {
+                  origin = boardingStop.code
+                  originName = boardingStop.name
+                  // Use the boarding stop's scheduled departure time
+                  if (boardingStop.scheduledDep) {
+                    const [h, m] = boardingStop.scheduledDep.split(':').map(Number)
+                    const d = new Date(schedule.departureScheduled)
+                    d.setHours(h, m, 0, 0)
+                    departureScheduled = d
+                  }
+                  console.log(`[calendar] Train ${detected.trainNumber}: boarding at ${origin} (${originName}) not route origin ${schedule.origin}`)
+                }
+              }
+
               await prisma.train.create({
                 data: {
                   userId,
                   calendarEventId: event.id ?? null,
                   trainNumber: schedule.trainNumber,
                   trainName: schedule.trainName ?? null,
-                  origin: schedule.origin,
+                  origin,
                   destination: schedule.destination,
-                  originName: schedule.originName ?? null,
+                  originName,
                   destinationName: schedule.destinationName ?? null,
-                  departureScheduled: schedule.departureScheduled,
+                  departureScheduled,
                   arrivalScheduled: schedule.arrivalScheduled,
                   stopsJson: schedule.stops.length > 0 ? JSON.stringify(schedule.stops) : null,
                   status: 'scheduled',
