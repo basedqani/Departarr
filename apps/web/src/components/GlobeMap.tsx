@@ -11,6 +11,8 @@ interface Props {
   departureScheduled?: string
   arrivalScheduled?: string
   status?: string
+  expanded?: boolean
+  onExpandToggle?: () => void
 }
 
 // Plane icon for the GL symbol layer. Rendered in the map's own coordinate
@@ -67,7 +69,7 @@ function applyPremiumTheme(map: import('maplibre-gl').Map): void {
   }
 }
 
-export function GlobeMap({ origin, destination, position, departureScheduled, arrivalScheduled, status }: Props): React.ReactElement {
+export function GlobeMap({ origin, destination, position, departureScheduled, arrivalScheduled, status, expanded, onExpandToggle }: Props): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('maplibre-gl').Map | null>(null)
   // Flattened great-circle coords, so the plane can ride the actual arc
@@ -352,41 +354,91 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
           background: '#05080f',
         }}
       />
-      {/* Recenter button */}
-      <button
-        onClick={handleRecenter}
-        aria-label="Re-center map"
-        style={{
-          position: 'absolute',
-          bottom: '0.75rem',
-          right: '0.75rem',
-          zIndex: 10,
-          width: 36,
-          height: 36,
-          borderRadius: '50%',
-          background: 'rgba(13,19,32,0.72)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          padding: 0,
-          color: 'rgba(232,237,245,0.8)',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-          transition: 'background 0.15s',
-        }}
-      >
-        {/* Lucide Locate icon */}
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="2" y1="12" x2="5" y2="12" />
-          <line x1="19" y1="12" x2="22" y2="12" />
-          <line x1="12" y1="2" x2="12" y2="5" />
-          <line x1="12" y1="19" x2="12" y2="22" />
-          <circle cx="12" cy="12" r="4" />
-        </svg>
-      </button>
+      {/* Globe controls: expand + recenter */}
+      <div style={{
+        position: 'absolute',
+        bottom: '0.75rem',
+        right: '0.75rem',
+        zIndex: 10,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.4rem',
+      }}>
+        {/* Expand / collapse button */}
+        {onExpandToggle && (
+          <button
+            onClick={onExpandToggle}
+            aria-label={expanded ? 'Collapse map' : 'Expand map'}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'rgba(13,19,32,0.72)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              padding: 0,
+              color: 'rgba(232,237,245,0.8)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+              transition: 'background 0.15s',
+            }}
+          >
+            {expanded ? (
+              /* Collapse: chevrons pointing inward */
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="10" y1="14" x2="3" y2="21" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+              </svg>
+            ) : (
+              /* Expand: arrows pointing outward */
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            )}
+          </button>
+        )}
+
+        {/* Recenter button */}
+        <button
+          onClick={handleRecenter}
+          aria-label="Re-center map"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: 'rgba(13,19,32,0.72)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            padding: 0,
+            color: 'rgba(232,237,245,0.8)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+            transition: 'background 0.15s',
+          }}
+        >
+          {/* Lucide Locate icon */}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="2" y1="12" x2="5" y2="12" />
+            <line x1="19" y1="12" x2="22" y2="12" />
+            <line x1="12" y1="2" x2="12" y2="5" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+            <circle cx="12" cy="12" r="4" />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 }

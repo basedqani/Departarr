@@ -638,6 +638,7 @@ export function FlightDetailPage(): React.ReactElement {
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [position, setPosition] = useState<AircraftPosition | null>(null)
+  const [globeExpanded, setGlobeExpanded] = useState(false)
 
   const { data: flight, isLoading } = useQuery({
     queryKey: ['flight', id],
@@ -733,7 +734,14 @@ export function FlightDetailPage(): React.ReactElement {
       transition={{ duration: 0.25 }}
     >
       {/* Globe hero — full bleed */}
-      <div className="globe-hero globe-hero-top-safe">
+      <div
+        className="globe-hero globe-hero-top-safe"
+        style={{
+          height: globeExpanded ? '75vh' : undefined,
+          maxHeight: globeExpanded ? '620px' : undefined,
+          transition: 'height 0.35s cubic-bezier(0.4,0,0.2,1), max-height 0.35s cubic-bezier(0.4,0,0.2,1)',
+        }}
+      >
         <Suspense fallback={<div style={{ width: '100%', height: '100%', background: '#05080f' }} />}>
           <GlobeMap
             origin={flight.origin}
@@ -742,6 +750,8 @@ export function FlightDetailPage(): React.ReactElement {
             departureScheduled={flight.departureScheduled}
             arrivalScheduled={flight.arrivalScheduled}
             status={flight.status}
+            expanded={globeExpanded}
+            onExpandToggle={() => setGlobeExpanded(v => !v)}
           />
         </Suspense>
 
