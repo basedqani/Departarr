@@ -388,24 +388,7 @@ export function SettingsPage(): React.ReactElement {
               checked={allowRegistration}
               onChange={toggleAllowRegistration}
             />
-            <div className="settings-row">
-              <div>
-                <div className="settings-row-label">Clear past flights</div>
-                <div className="settings-row-sub">Delete all flights with a departure date in the past. Future flights are untouched.</div>
-              </div>
-              <button
-                className="danger"
-                style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem', whiteSpace: 'nowrap', flexShrink: 0 }}
-                onClick={() => {
-                  if (!confirm('Delete all past flights? This cannot be undone.')) return
-                  api.flights.deletePast()
-                    .then(() => { queryClient.invalidateQueries({ queryKey: ['flights'] }); alert('Past flights cleared.') })
-                    .catch(err => alert(err instanceof Error ? err.message : 'Failed'))
-                }}
-              >
-                Clear
-              </button>
-            </div>
+
           </div>
         </>
       )}

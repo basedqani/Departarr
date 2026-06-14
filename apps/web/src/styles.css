@@ -102,6 +102,7 @@ html, body {
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
+  background: var(--bg);
 }
 
 #root {
