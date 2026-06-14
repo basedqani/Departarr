@@ -155,6 +155,16 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send(flight)
   })
 
+  // DELETE /api/flights/past — remove all past flights for the current user
+  app.delete('/flights/past', async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const now = new Date()
+    const result = await prisma.flight.deleteMany({
+      where: { userId, departureScheduled: { lt: now } },
+    })
+    return reply.send({ deleted: result.count })
+  })
+
   // GET /api/flights/:id
   app.get('/flights/:id', async (req, reply) => {
     const userId = (req.user as { id: string }).id

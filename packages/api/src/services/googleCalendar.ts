@@ -130,6 +130,10 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
               if (byEventId) continue
             }
 
+            // Only import upcoming flights — past flights must be added manually
+            const flightDate = new Date(date + 'T23:59:59Z')
+            if (flightDate < new Date()) continue
+
             // Layer 2: fallback dedup by ident + date range (catches manual vs calendar dupes)
             const dayStart = new Date(`${date}T00:00:00Z`).getTime()
             const byFlight = await prisma.flight.findFirst({
@@ -171,36 +175,9 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
               }
 
               if (!flightData) {
-                // For past flights, create a stub record from calendar data so
-                // deleted flights are restored on re-sync even when the data
-                // provider can't look them up (e.g. AeroDataBox free-tier only
-                // covers active/near-future flights).
-                const depDate = new Date(date + 'T12:00:00Z')
-                if (depDate < new Date()) {
-                  // Skip stub if we have no route hint — a record with blank
-                  // origin/destination is worse than no record at all.
-                  if (!flight.origin || !flight.dest) {
-                    console.log(`[calendar] Skipping stub for ${flight.ident} — no route hint available`)
-                    continue
-                  }
-                  await prisma.flight.create({
-                    data: {
-                      userId,
-                      ident: flight.ident,
-                      faFlightId: null,
-                      airlineIata: flight.airlineCode ?? null,
-                      flightNumber: flight.flightNumber ?? null,
-                      origin: flight.origin,
-                      destination: flight.dest,
-                      departureScheduled: depDate,
-                      arrivalScheduled: new Date(depDate.getTime() + 2 * 60 * 60 * 1000),
-                      status: 'arrived',
-                      calendarEventId: event.id ?? null,
-                      lastPolledAt: null,
-                    },
-                  })
-                  flightsAdded++
-                }
+                // No AeroDataBox data — skip entirely. Past flights are blocked
+                // above; for future flights this means the flight isn't
+                // recognised yet (too far out) — don't create a stub.
                 continue
               }
 
