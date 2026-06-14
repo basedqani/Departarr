@@ -80,9 +80,22 @@ export const api = {
       request<{ deleted: number }>('/flights/past', { method: 'DELETE' }),
   },
 
+  trains: {
+    list: (when?: string) => request<Train[]>(`/trains${when ? `?when=${when}` : ''}`),
+    get: (id: string) => request<TrainWithEvents>(`/trains/${id}`),
+    lookup: (number: string, date: string) => request<TrainPreview>(`/trains/lookup?number=${encodeURIComponent(number)}&date=${encodeURIComponent(date)}`),
+    add: (data: { trainNumber: string; date: string; tripId?: string; origin?: string; destination?: string }) =>
+      request<Train>('/trains', { method: 'POST', body: JSON.stringify(data) }),
+    patch: (id: string, body: { seat?: string | null; confirmationCode?: string | null; tripId?: string | null }) =>
+      request<Train>(`/trains/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: (id: string) => request<void>(`/trains/${id}`, { method: 'DELETE' }),
+    weather: (id: string, unit: 'F' | 'C' = 'F') =>
+      request<WeatherResult>(`/trains/${id}/weather?units=${unit === 'F' ? 'imperial' : 'metric'}`),
+  },
+
   trips: {
     list: () => request<Trip[]>('/trips'),
-    get: (id: string) => request<TripWithFlights>(`/trips/${id}`),
+    get: (id: string) => request<TripWithLegs>(`/trips/${id}`),
     create: (data: { name: string; startDate?: string; endDate?: string }) =>
       request<Trip>('/trips', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: { name?: string; startDate?: string; endDate?: string }) =>
@@ -95,7 +108,7 @@ export const api = {
 
   share: {
     get: (token: string) =>
-      request<{ flight?: FlightWithEvents; trip?: TripWithFlights }>(`/share/${token}`),
+      request<{ flight?: FlightWithEvents; trip?: TripWithLegs }>(`/share/${token}`),
     pushSubscribe: (token: string, sub: PushSubscriptionJSON) =>
       request<{ ok: boolean }>(`/share/${token}/push-subscribe`, { method: 'POST', body: JSON.stringify(sub) }),
     pushUnsubscribe: (token: string, endpoint: string) =>
@@ -233,6 +246,75 @@ export interface Trip {
 
 export interface TripWithFlights extends Trip {
   flights: Flight[]
+}
+
+export interface TripWithLegs extends Trip {
+  flights: Flight[]
+  trains: Train[]
+}
+
+export interface Train {
+  id: string
+  userId: string
+  tripId: string | null
+  trainNumber: string
+  trainName: string | null
+  origin: string
+  destination: string
+  originName: string | null
+  destinationName: string | null
+  departureScheduled: string
+  departureEstimated: string | null
+  departureActual: string | null
+  arrivalScheduled: string
+  arrivalEstimated: string | null
+  arrivalActual: string | null
+  status: string
+  stopsJson: string | null
+  seat: string | null
+  confirmationCode: string | null
+  lastPolledAt: string | null
+  createdAt: string
+  trip?: { id: string; name: string } | null
+}
+
+export interface TrainStop {
+  code: string
+  name: string
+  tz: string
+  schArr: string | null
+  schDep: string | null
+  arr: string | null
+  dep: string | null
+  arrCmnt: string | null
+  depCmnt: string | null
+  status: string
+  stopSequence: number
+}
+
+export interface TrainEvent {
+  id: string
+  trainId: string
+  eventType: string
+  oldValue: string | null
+  newValue: string | null
+  occurredAt: string
+}
+
+export interface TrainWithEvents extends Train {
+  events: TrainEvent[]
+}
+
+export interface TrainPreview {
+  trainNumber: string
+  trainName: string | null
+  origin: string
+  destination: string
+  originName: string | null
+  destinationName: string | null
+  departureScheduled: string
+  arrivalScheduled: string
+  stops: TrainStop[]
 }
 
 export interface AircraftPosition {

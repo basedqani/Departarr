@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { api, type Flight } from '../lib/api'
+import { api, type Flight, type Train } from '../lib/api'
 import { formatDate, formatDuration } from '../lib/format'
 import { getAirport } from '../lib/airports'
 import { AirlineLogo } from '../components/AirlineLogo'
@@ -162,15 +162,7 @@ function PassportCard({ stats }: { stats: Stats }): React.ReactElement {
   )
 }
 
-function groupByYear(flights: Flight[]): Map<string, Flight[]> {
-  const groups = new Map<string, Flight[]>()
-  for (const f of [...flights].reverse()) {
-    const year = new Date(f.departureScheduled).getFullYear().toString()
-    if (!groups.has(year)) groups.set(year, [])
-    groups.get(year)!.push(f)
-  }
-  return groups
-}
+// Note: groupByYear is replaced by groupByYearMixed below which handles both flights and trains
 
 function FlightStamp({ flight, index }: { flight: Flight; index: number }): React.ReactElement {
   const dep = new Date(flight.departureScheduled)
@@ -231,18 +223,110 @@ function FlightStamp({ flight, index }: { flight: Flight; index: number }): Reac
   )
 }
 
+function TrainStamp({ train, index }: { train: Train; index: number }): React.ReactElement {
+  const dep = new Date(train.departureScheduled)
+  const monthDay = dep.toLocaleDateString([], { month: 'short', day: 'numeric' })
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, delay: index * 0.025 }}
+    >
+      <Link to={`/trains/${train.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          padding: '0.55rem 0',
+          borderBottom: '1px solid var(--hairline)',
+        }}>
+          {/* Date stamp */}
+          <div style={{
+            width: 36,
+            flexShrink: 0,
+            textAlign: 'center',
+            fontSize: '0.65rem',
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
+            letterSpacing: '0.02em',
+            lineHeight: 1.2,
+          }}>
+            {monthDay.split(' ')[0].toUpperCase()}
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text)', lineHeight: 1 }}>
+              {monthDay.split(' ')[1]}
+            </div>
+          </div>
+
+          {/* Train icon */}
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--text-muted)', opacity: 0.85 }}>
+            <rect x="4" y="3" width="16" height="13" rx="2" />
+            <path d="M4 11h16" />
+            <path d="M12 3v8" />
+            <path d="M8 19l-2 3" />
+            <path d="M18 22l-2-3" />
+            <path d="M7 19h10" />
+          </svg>
+
+          {/* Route */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.88rem', letterSpacing: '0.04em', color: 'var(--text)' }}>
+              {train.origin} › {train.destination}
+            </div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.05rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Train {train.trainNumber}{train.trainName ? ` · ${train.trainName}` : ''}
+              {train.trip && ` · ${train.trip.name}`}
+            </div>
+          </div>
+
+          {/* Chevron */}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)', flexShrink: 0, opacity: 0.5 }}>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </div>
+      </Link>
+    </motion.div>
+  )
+}
+
+type PastItem =
+  | { kind: 'flight'; data: Flight; sortKey: number }
+  | { kind: 'train'; data: Train; sortKey: number }
+
+function groupByYearMixed(items: PastItem[]): Map<string, PastItem[]> {
+  const groups = new Map<string, PastItem[]>()
+  for (const item of [...items].reverse()) {
+    const year = new Date(item.data.departureScheduled).getFullYear().toString()
+    if (!groups.has(year)) groups.set(year, [])
+    groups.get(year)!.push(item)
+  }
+  return groups
+}
+
 export function PastPage(): React.ReactElement {
-  const { data: flights, isLoading } = useQuery({
+  const { data: flights, isLoading: flightsLoading } = useQuery({
     queryKey: ['flights', 'past'],
     queryFn: () => api.flights.list('past'),
   })
 
+  const { data: trains = [], isLoading: trainsLoading } = useQuery({
+    queryKey: ['trains', 'past'],
+    queryFn: () => api.trains.list('past'),
+  })
+
+  const isLoading = flightsLoading || trainsLoading
+
   const [showAll, setShowAll] = useState(false)
 
   const stats = flights ? computeStats(flights) : null
-  const yearGroups = flights ? groupByYear(flights) : new Map<string, Flight[]>()
 
-  // Show most recent year expanded, rest collapsed unless showAll
+  // Merge flights and trains sorted by departure desc (most recent first)
+  const allItems: PastItem[] = [
+    ...(flights ?? []).map(f => ({ kind: 'flight' as const, data: f, sortKey: new Date(f.departureScheduled).getTime() })),
+    ...trains.map(t => ({ kind: 'train' as const, data: t, sortKey: new Date(t.departureScheduled).getTime() })),
+  ].sort((a, b) => b.sortKey - a.sortKey)
+
+  const yearGroups = groupByYearMixed(allItems)
   const years = [...yearGroups.keys()]
   const visibleYears = showAll ? years : years.slice(0, 1)
 
@@ -253,7 +337,7 @@ export function PastPage(): React.ReactElement {
       transition={{ duration: 0.2 }}
     >
       <div className="page-header">
-        <h1>Past Flights</h1>
+        <h1>Past</h1>
       </div>
 
       {isLoading && (
@@ -263,10 +347,10 @@ export function PastPage(): React.ReactElement {
         </div>
       )}
 
-      {flights && flights.length === 0 && !isLoading && (
+      {allItems.length === 0 && !isLoading && (
         <div className="empty">
-          <h3>No past flights yet</h3>
-          <p>Your flight history and stats will appear here</p>
+          <h3>No past trips yet</h3>
+          <p>Your flight and train history will appear here</p>
         </div>
       )}
 
@@ -275,7 +359,14 @@ export function PastPage(): React.ReactElement {
       )}
 
       {visibleYears.map((year) => {
-        const yearFlights = yearGroups.get(year) ?? []
+        const yearItems = yearGroups.get(year) ?? []
+        const flightCount = yearItems.filter(i => i.kind === 'flight').length
+        const trainCount = yearItems.filter(i => i.kind === 'train').length
+        const countLabel = [
+          flightCount > 0 ? `${flightCount} flight${flightCount !== 1 ? 's' : ''}` : '',
+          trainCount > 0 ? `${trainCount} train${trainCount !== 1 ? 's' : ''}` : '',
+        ].filter(Boolean).join(' · ')
+
         return (
           <div key={year} style={{ marginBottom: '1.5rem' }}>
             <div style={{
@@ -290,12 +381,14 @@ export function PastPage(): React.ReactElement {
               alignItems: 'baseline',
             }}>
               <span>{year}</span>
-              <span style={{ fontWeight: 400, letterSpacing: '0.04em' }}>{yearFlights.length} flight{yearFlights.length !== 1 ? 's' : ''}</span>
+              <span style={{ fontWeight: 400, letterSpacing: '0.04em' }}>{countLabel}</span>
             </div>
             <div style={{ background: 'var(--surface)', border: '1px solid var(--hairline)', borderRadius: 8, padding: '0 0.75rem' }}>
-              {yearFlights.map((f, i) => (
-                <FlightStamp key={f.id} flight={f} index={i} />
-              ))}
+              {yearItems.map((item, i) =>
+                item.kind === 'flight'
+                  ? <FlightStamp key={item.data.id} flight={item.data} index={i} />
+                  : <TrainStamp key={item.data.id} train={item.data} index={i} />
+              )}
             </div>
           </div>
         )
@@ -311,9 +404,9 @@ export function PastPage(): React.ReactElement {
         </button>
       )}
 
-      {flights && flights.length > 0 && (
+      {allItems.length > 0 && (
         <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.65rem', color: 'var(--text-muted)', opacity: 0.5 }}>
-          {formatDate(flights[flights.length - 1]?.departureScheduled)} — {formatDate(flights[0]?.departureScheduled)}
+          {formatDate(allItems[allItems.length - 1]?.data.departureScheduled)} — {formatDate(allItems[0]?.data.departureScheduled)}
         </div>
       )}
     </motion.div>

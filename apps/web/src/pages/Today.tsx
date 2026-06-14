@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
+import { TrainCard } from '../components/TrainCard'
 import { ConnectionBadge } from '../components/ConnectionBadge'
 import { TripCard } from '../components/TripCard'
 import { buildDisplayItems } from '../lib/tripGrouping'
@@ -60,13 +61,19 @@ export function TodayPage(): React.ReactElement {
     refetchInterval: 60_000,
   })
 
+  const { data: trains = [] } = useQuery({
+    queryKey: ['trains', 'today'],
+    queryFn: () => api.trains.list('today'),
+    refetchInterval: 60_000,
+  })
+
   const { data: connections } = useQuery({
     queryKey: ['connections'],
     queryFn: api.flights.connections,
     refetchInterval: 60_000,
   })
 
-  const displayItems = buildDisplayItems(flights ?? [])
+  const displayItems = buildDisplayItems(flights ?? [], trains)
 
   return (
     <motion.div
@@ -100,6 +107,9 @@ export function TodayPage(): React.ReactElement {
       {displayItems.map((item, i) => {
         if (item.type === 'trip') {
           return <TripCard key={item.tripId} group={item} index={i} />
+        }
+        if (item.type === 'standalone-train') {
+          return <TrainCard key={item.train.id} train={item.train} index={i} />
         }
         const f = item.flight
         const conn = connections?.find(c => c.flightId === f.id)

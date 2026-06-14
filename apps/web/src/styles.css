@@ -442,6 +442,47 @@ input:focus, select:focus, textarea:focus {
 .badge-cancelled  { background: rgba(197,34,31,0.12); color: var(--cancelled); }
 .badge-diverted   { background: rgba(197,34,31,0.12); color: var(--cancelled); }
 .badge-unknown    { background: rgba(138,155,176,0.15); color: var(--muted-status); }
+.badge-at-station { background: var(--accent-2-dim);    color: var(--accent-2); }
+
+/* Mode toggle segmented control (used in Add Flight/Train page) */
+.mode-toggle {
+  display: flex;
+  gap: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  max-width: 480px;
+  margin-bottom: 1rem;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.mode-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.mode-btn:hover:not(.active) {
+  color: var(--text);
+  opacity: 1;
+}
 
 @media (prefers-color-scheme: dark) {
   .badge-boarding   { background: rgba(21,101,192,0.25); color: #90CAF9; }

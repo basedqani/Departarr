@@ -11,6 +11,7 @@ import { PastPage } from './pages/Past'
 import { FlightDetailPage } from './pages/FlightDetail'
 import { AddFlightPage } from './pages/AddFlight'
 import { TripDetailPage } from './pages/TripDetail'
+import { TrainDetailPage } from './pages/TrainDetail'
 import { SharePage } from './pages/Share'
 import { SettingsPage } from './pages/Settings'
 
@@ -50,6 +51,7 @@ function AuthenticatedApp(): React.ReactElement {
         <Route path="/flights/add" element={<AddFlightPage />} />
         <Route path="/flights/:id" element={<FlightDetailPage />} />
         <Route path="/trips/:id" element={<TripDetailPage />} />
+        <Route path="/trains/:id" element={<TrainDetailPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </Layout>
