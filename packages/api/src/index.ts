@@ -65,7 +65,8 @@ if (existsSync(webDist)) {
   await app.register(staticFiles, {
     root: webDist,
     prefix: '/',
-    decorateReply: false,
+    // decorateReply must stay true so the SPA fallback below can call
+    // reply.sendFile — without it client routes (/login, /settings) 500.
   })
 
   // SPA fallback: non-/api, non-/ws GET requests get index.html
