@@ -270,26 +270,39 @@ input:focus, select:focus, textarea:focus {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: calc(env(safe-area-inset-top, 0px) + 1rem) 1rem calc(5rem + env(safe-area-inset-bottom)) 1rem;
+  padding: 1rem 1rem calc(5rem + env(safe-area-inset-bottom, 0px)) 1rem;
   max-width: 700px;
   margin: 0 auto;
   width: 100%;
 }
 
-/* For FlightDetail which uses full-bleed globe */
+/* For FlightDetail which uses full-bleed globe — no top pad, header is hidden */
 .main-content.no-pad-top {
-  padding-top: 0;
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* ─────────────────────────────
    App header (logo bar)
    ───────────────────────────── */
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.875rem 0 0.25rem;
-  margin-bottom: 0.5rem;
+  padding: calc(env(safe-area-inset-top, 0px) + 0.875rem) 1rem 0.5rem;
+  background: rgba(240,237,231,0.92);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .app-header {
+    background: rgba(26,26,26,0.92);
+  }
 }
 
 .app-wordmark {

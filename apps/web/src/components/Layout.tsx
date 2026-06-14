@@ -70,15 +70,15 @@ export function Layout({ children }: Props): React.ReactElement {
 
   return (
     <div className="layout">
+      {!isFlightDetail && (
+        <header className="app-header">
+          <NavLink to="/today" className="app-wordmark">
+            <Logo size={22} />
+            Departarr
+          </NavLink>
+        </header>
+      )}
       <main className={`main-content${isFlightDetail ? ' no-pad-top' : ''}`}>
-        {!isFlightDetail && (
-          <header className="app-header">
-            <NavLink to="/today" className="app-wordmark">
-              <Logo size={22} />
-              Departarr
-            </NavLink>
-          </header>
-        )}
         {children}
       </main>
 
