@@ -4,7 +4,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatTime, formatDateTime, formatDuration, formatLocalTime, formatTzShift } from '../lib/format'
+import { formatTime, formatDateTime, formatDuration, formatLocalTime, formatTzShift, getAirportTz } from '../lib/format'
 import type { AircraftPosition, Flight, FlightWithEvents, WeatherResult } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
@@ -98,28 +98,57 @@ interface TimeColProps {
 
 function TimeColumn({ iata, label, scheduled, estimated, actual, align }: TimeColProps): React.ReactElement {
   const best = actual ?? estimated ?? scheduled
-  const hasChange = (estimated ?? actual) && (estimated ?? actual) !== scheduled
   const airport = getAirport(iata)
-  const tz = airport?.tz
+  // Prefer airport DB timezone, fall back to static AIRPORT_TZ map
+  const tz = airport?.tz ?? getAirportTz(iata)
   const localTime = formatLocalTime(best, tz)
-  const scheduledLocal = formatLocalTime(scheduled, tz)
+
+  // Compute delay in minutes vs scheduled; only show badge if > 5 min
+  const delayMin = (() => {
+    const updated = actual ?? estimated
+    if (!updated || !scheduled) return 0
+    const diff = Math.round((new Date(updated).getTime() - new Date(scheduled).getTime()) / 60_000)
+    return Math.abs(diff) > 5 ? diff : 0
+  })()
+
+  // Time label: "Actual", "Estimated", or "Scheduled"
+  const timeTypeLabel = actual ? 'Actual' : estimated ? 'Estimated' : 'Scheduled'
+
+  // Timezone abbreviation (CDT, JST, etc.)
+  const tzAbbr = tz
+    ? (new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' })
+        .formatToParts(new Date(best))
+        .find(p => p.type === 'timeZoneName')?.value ?? '')
+    : ''
 
   return (
     <div className={`time-col${align === 'right' ? ' right' : ''}`}>
       <div className="time-city">{airport?.city ?? iata}</div>
       <div className="time-iata">{iata}</div>
-      <div className="time-main">{localTime}</div>
-      {hasChange && (
-        <div className="time-sched">{scheduledLocal}</div>
-      )}
-      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
-        {label}
-        {tz && (
-          <span style={{ marginLeft: '0.3rem', opacity: 0.7 }}>
-            {new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' })
-              .formatToParts(new Date(best))
-              .find(p => p.type === 'timeZoneName')?.value ?? ''}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+        <div className="time-main">{localTime}</div>
+        {delayMin !== 0 && (
+          <span style={{
+            fontSize: '0.68rem',
+            fontWeight: 700,
+            padding: '0.1rem 0.4rem',
+            borderRadius: 4,
+            background: 'rgba(251,191,36,0.15)',
+            border: '1px solid rgba(251,191,36,0.4)',
+            color: '#fbbf24',
+            letterSpacing: '0.02em',
+            whiteSpace: 'nowrap',
+          }}>
+            {delayMin > 0 ? `Delayed +${delayMin}m` : `Early ${delayMin}m`}
           </span>
+        )}
+      </div>
+      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem', display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+        <span>{label}</span>
+        <span style={{ opacity: 0.6 }}>·</span>
+        <span style={{ opacity: 0.8 }}>{timeTypeLabel}</span>
+        {tzAbbr && (
+          <span style={{ opacity: 0.7 }}>{tzAbbr}</span>
         )}
       </div>
     </div>

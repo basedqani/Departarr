@@ -1,3 +1,26 @@
+const AIRPORT_TZ: Record<string, string> = {
+  ATL: 'America/New_York', LAX: 'America/Los_Angeles', ORD: 'America/Chicago',
+  DFW: 'America/Chicago', DEN: 'America/Denver', JFK: 'America/New_York',
+  SFO: 'America/Los_Angeles', SEA: 'America/Los_Angeles', LAS: 'America/Los_Angeles',
+  MCO: 'America/New_York', EWR: 'America/New_York', PHX: 'America/Phoenix',
+  IAH: 'America/Chicago', MIA: 'America/New_York', BOS: 'America/New_York',
+  MSP: 'America/Chicago', DTW: 'America/Detroit', CLT: 'America/New_York',
+  PHL: 'America/New_York', LGA: 'America/New_York', BWI: 'America/New_York',
+  SLC: 'America/Denver', DCA: 'America/New_York', MDW: 'America/Chicago',
+  SAN: 'America/Los_Angeles', TPA: 'America/New_York', PDX: 'America/Los_Angeles',
+  HNL: 'Pacific/Honolulu', BNA: 'America/Chicago', AUS: 'America/Chicago',
+  MCI: 'America/Chicago', LHR: 'Europe/London', CDG: 'Europe/Paris',
+  AMS: 'Europe/Amsterdam', FRA: 'Europe/Berlin', NRT: 'Asia/Tokyo',
+  HND: 'Asia/Tokyo', ICN: 'Asia/Seoul', SIN: 'Asia/Singapore',
+  HKG: 'Asia/Hong_Kong', SYD: 'Australia/Sydney', DXB: 'Asia/Dubai',
+  DOH: 'Asia/Qatar', YYZ: 'America/Toronto', YVR: 'America/Vancouver',
+  GRU: 'America/Sao_Paulo',
+}
+
+export function getAirportTz(iata: string): string {
+  return AIRPORT_TZ[iata] ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+}
+
 export function formatTime(dateStr: string | null | undefined): string {
   if (!dateStr) return '--:--'
   const d = new Date(dateStr)

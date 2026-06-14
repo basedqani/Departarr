@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import type { Flight } from '../lib/api'
 import { StatusBadge } from './StatusBadge'
 import { AirlineLogo } from './AirlineLogo'
-import { formatTime, formatDate } from '../lib/format'
+import { formatDate, getAirportTz, formatLocalTime } from '../lib/format'
 import { getAirline } from '../lib/airlines'
 import { useCountdown } from '../hooks/useCountdown'
 
@@ -19,6 +19,47 @@ function RouteLine(): React.ReactElement {
       <svg viewBox="0 0 24 24" fill="currentColor">
         <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" />
       </svg>
+    </span>
+  )
+}
+
+/** Returns delay in minutes (positive = late) or 0 if no meaningful change. */
+function delayMinutes(scheduled: string | null | undefined, updated: string | null | undefined): number {
+  if (!scheduled || !updated) return 0
+  const diff = Math.round((new Date(updated).getTime() - new Date(scheduled).getTime()) / 60_000)
+  return Math.abs(diff) > 5 ? diff : 0
+}
+
+interface TimeWithDelayProps {
+  scheduled: string | null | undefined
+  estimated: string | null | undefined
+  actual: string | null | undefined
+  airportIata: string
+}
+
+function TimeWithDelay({ scheduled, estimated, actual, airportIata }: TimeWithDelayProps): React.ReactElement {
+  const best = actual ?? estimated ?? scheduled
+  const tz = getAirportTz(airportIata)
+  const displayTime = formatLocalTime(best, tz)
+  const delay = delayMinutes(scheduled, actual ?? estimated)
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+      <span>{displayTime}</span>
+      {delay !== 0 && (
+        <span style={{
+          fontSize: '0.62rem',
+          fontWeight: 700,
+          padding: '0.08rem 0.35rem',
+          borderRadius: 3,
+          background: 'rgba(251,191,36,0.15)',
+          border: '1px solid rgba(251,191,36,0.4)',
+          color: '#fbbf24',
+          letterSpacing: '0.02em',
+          whiteSpace: 'nowrap',
+        }}>
+          {delay > 0 ? `+${delay}m` : `${delay}m`}
+        </span>
+      )}
     </span>
   )
 }
@@ -66,8 +107,6 @@ function CountdownChip({ flight }: { flight: Flight }): React.ReactElement {
 }
 
 export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactElement {
-  const depTime = flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled
-  const arrTime = flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled
   const progress = flightProgress(flight)
   const airlineName = getAirline(flight.airlineIata ?? flight.ident.slice(0, 2))?.name
 
@@ -113,7 +152,14 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
           <div className="flight-board-row">
             <div className="flight-board-cell">
               <span className="pass-label">Boards</span>
-              <span className="pass-value">{formatTime(depTime)}</span>
+              <span className="pass-value">
+                <TimeWithDelay
+                  scheduled={flight.departureScheduled}
+                  estimated={flight.departureEstimated}
+                  actual={flight.departureActual}
+                  airportIata={flight.origin}
+                />
+              </span>
             </div>
             {flight.gateDeparture ? (
               <div className="flight-board-cell">
@@ -128,7 +174,14 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
             ) : (
               <div className="flight-board-cell">
                 <span className="pass-label">Arrives</span>
-                <span className="pass-value">{formatTime(arrTime)}</span>
+                <span className="pass-value">
+                  <TimeWithDelay
+                    scheduled={flight.arrivalScheduled}
+                    estimated={flight.arrivalEstimated}
+                    actual={flight.arrivalActual}
+                    airportIata={flight.destination}
+                  />
+                </span>
               </div>
             )}
             <div className="flight-board-cell" style={{ alignItems: 'flex-end' }}>
