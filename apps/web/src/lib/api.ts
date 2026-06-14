@@ -77,6 +77,8 @@ export const api = {
       request<void>(`/flights/${id}/share`, { method: 'DELETE' }),
     weather: (id: string) =>
       request<WeatherResult>(`/flights/${id}/weather`),
+    deletePast: () =>
+      request<{ deleted: number }>('/flights/past', { method: 'DELETE' }),
   },
 
   trips: {
