@@ -6,6 +6,8 @@ import { api } from '../lib/api'
 import type { TrainStop, WeatherResult } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
 import { formatDuration, formatDate } from '../lib/format'
+import { TrainMap } from '../components/TrainMap'
+import type { GtfsStop } from '../components/TrainMap'
 
 // NOTE: Amtrak stations don't have a standardised timezone map.
 // For v1, all times are displayed in the browser's local timezone.
@@ -220,6 +222,11 @@ export function TrainDetailPage(): React.ReactElement {
     catch { return [] }
   })()
 
+  const gtfsStops: GtfsStop[] = (() => {
+    try { return JSON.parse(train.stopsJson ?? '[]') as GtfsStop[] }
+    catch { return [] }
+  })()
+
   const depTime = fmtTime(train.departureActual ?? train.departureEstimated ?? train.departureScheduled)
   const arrTime = fmtTime(train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled)
   const durationMs = new Date(train.arrivalScheduled).getTime() - new Date(train.departureScheduled).getTime()
@@ -335,6 +342,15 @@ export function TrainDetailPage(): React.ReactElement {
 
         {/* Booking card */}
         <BookingCard trainId={id!} seat={train.seat} confirmationCode={train.confirmationCode} />
+
+        {/* Train route map */}
+        {gtfsStops.length >= 2 && gtfsStops[0].lat !== 0 && (
+          <TrainMap
+            stops={gtfsStops}
+            departureScheduled={train.departureScheduled}
+            status={train.status}
+          />
+        )}
 
         {/* Stop timeline */}
         {stops.length > 0 && <StopTimeline stops={stops} />}
