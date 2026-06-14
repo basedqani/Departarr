@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
 import { formatTime, formatDateTime, formatDuration, formatLocalTime, formatTzShift } from '../lib/format'
-import type { AircraftPosition, Flight, FlightWithEvents } from '../lib/api'
+import type { AircraftPosition, Flight, FlightWithEvents, WeatherResult } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
 
@@ -627,6 +627,55 @@ function OooiTimeline({ flight }: { flight: FlightWithEvents }): React.ReactElem
   )
 }
 
+// ─── Weather helpers ──────────────────────────────────────────────────────────
+
+function weatherLabel(code: number): string {
+  if (code === 0) return 'Clear'
+  if (code <= 3) return 'Cloudy'
+  if (code <= 9) return 'Foggy'
+  if (code <= 29) return 'Drizzle'
+  if (code <= 39) return 'Snow'
+  if (code <= 49) return 'Fog'
+  if (code <= 59) return 'Drizzle'
+  if (code <= 69) return 'Rain'
+  if (code <= 79) return 'Snow'
+  if (code <= 84) return 'Showers'
+  if (code <= 94) return 'Thunderstorm'
+  return 'Storm'
+}
+
+function weatherEmoji(code: number): string {
+  if (code === 0) return '☀️'
+  if (code <= 3) return '⛅'
+  if (code <= 49) return '🌫'
+  if (code <= 69) return '🌧'
+  if (code <= 79) return '❄️'
+  if (code <= 84) return '🌦'
+  return '⛈'
+}
+
+function WeatherSection({ weather }: { weather: WeatherResult }): React.ReactElement | null {
+  if (weather.weather.length === 0) return null
+  return (
+    <section className="weather-section">
+      <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+        Weather at {weather.airport}
+      </div>
+      <div className="weather-slots">
+        {weather.weather.map(w => (
+          <div key={w.time} className="weather-slot">
+            <span className="weather-emoji">{weatherEmoji(w.code)}</span>
+            <span className="weather-temp">{Math.round(w.temp)}°</span>
+            <span className="weather-label">{weatherLabel(w.code)}</span>
+            <span className="weather-wind">{Math.round(w.wind)} km/h</span>
+            <span className="weather-time">{new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function FlightDetailPage(): React.ReactElement {
@@ -644,6 +693,14 @@ export function FlightDetailPage(): React.ReactElement {
     queryKey: ['flight', id],
     queryFn: () => api.flights.get(id!),
     refetchInterval: 60_000,
+  })
+
+  const { data: weather } = useQuery({
+    queryKey: ['weather', flight?.id],
+    queryFn: () => api.flights.weather(flight!.id),
+    enabled: !!flight?.destination && (!!flight?.arrivalScheduled || !!flight?.arrivalEstimated || !!flight?.arrivalActual),
+    staleTime: 30 * 60 * 1000,
+    retry: false,
   })
 
   // Poll live position every 30s
@@ -998,6 +1055,9 @@ export function FlightDetailPage(): React.ReactElement {
             <div className="info-cell-value">{formatDuration(durationMs)}</div>
           </div>
         </div>
+
+        {/* Weather at destination */}
+        {weather && <WeatherSection weather={weather} />}
 
         {/* Event history */}
         {flight.events.length > 0 && (
