@@ -141,6 +141,33 @@ function diffFlights(stored: FlightFields, fresh: FlightData): FieldDiff[] {
 // ── Per-flight apply (write DB + notify) ──────────────────────────────────
 
 async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> {
+  // Fix 1: First-ever poll — silently write baseline, no notifications
+  if (flight.lastPolledAt === null) {
+    await prisma.flight.update({
+      where: { id: flight.id },
+      data: {
+        status: fresh.status,
+        gateDeparture: fresh.gateDeparture ?? null,
+        gateArrival: fresh.gateArrival ?? null,
+        terminalDeparture: fresh.terminalDeparture ?? null,
+        terminalArrival: fresh.terminalArrival ?? null,
+        baggageClaim: fresh.baggageClaim ?? null,
+        departureEstimated: fresh.departureEstimated ?? null,
+        departureActual: fresh.departureActual ?? null,
+        arrivalEstimated: fresh.arrivalEstimated ?? null,
+        arrivalActual: fresh.arrivalActual ?? null,
+        takeoffScheduled: fresh.takeoffScheduled ?? null,
+        takeoffEstimated: fresh.takeoffEstimated ?? null,
+        takeoffActual: fresh.takeoffActual ?? null,
+        landingScheduled: fresh.landingScheduled ?? null,
+        landingEstimated: fresh.landingEstimated ?? null,
+        landingActual: fresh.landingActual ?? null,
+        lastPolledAt: new Date(),
+      },
+    })
+    return
+  }
+
   const diffs = diffFlights(flight, fresh)
 
   if (diffs.length === 0) {
@@ -148,7 +175,36 @@ async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> 
     return
   }
 
-  // Write events
+  // Fix 2: Deduplicate by eventType — keep first occurrence only
+  const seen = new Set<string>()
+  const uniqueDiffs = diffs.filter(d => {
+    if (seen.has(d.eventType)) return false
+    seen.add(d.eventType)
+    return true
+  })
+
+  // Fix 3: Suppress stale/irrelevant notifications based on flight state
+  const alreadyDeparted =
+    flight.departureActual != null ||
+    fresh.status === 'en_route' ||
+    fresh.status === 'en-route' ||
+    fresh.status === 'arrived'
+
+  const notifiableDiffs = uniqueDiffs.filter(d => {
+    // Suppress departure delays once the plane has left
+    if (
+      alreadyDeparted &&
+      d.eventType === 'delay' &&
+      (d.field === 'departureEstimated' || d.field === 'takeoffEstimated')
+    ) return false
+    // Suppress gate changes after departure
+    if (alreadyDeparted && d.eventType === 'gate_change') return false
+    // Never notify for 'delay' on arrival fields when already arrived
+    if (fresh.status === 'arrived' && d.eventType === 'delay') return false
+    return true
+  })
+
+  // Write all diffs to history (full diffs, not deduplicated)
   await prisma.$transaction([
     prisma.flight.update({
       where: { id: flight.id },
@@ -184,8 +240,8 @@ async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> 
     ),
   ])
 
-  // Notify via push + WebSocket
-  for (const d of diffs) {
+  // Notify via push + WebSocket (only notifiable, deduplicated diffs)
+  for (const d of notifiableDiffs) {
     const notif = buildPushNotification(
       d.eventType,
       flight.ident,
