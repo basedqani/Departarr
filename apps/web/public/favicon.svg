@@ -1,5 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#05080f"/>
-  <path d="M22.5 17.5v-2l-7.5-4.7V7.25A1.25 1.25 0 0 0 13.75 6 1.25 1.25 0 0 0 12.5 7.25V10.8L5 15.5v2l7.5-2.35V20l-1.75 1.25V23l3.25-.9 3.25.9v-1.75L15.5 20v-4.85l7 2.35z" fill="#4da8ff"/>
-  <path d="M20 11.5 L26 9" stroke="#4da8ff" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+  <rect width="32" height="32" rx="6" fill="#F7F5F0"/>
+  <rect x="3" y="8" width="26" height="16" rx="2" fill="none" stroke="#1A1A1A" stroke-width="1.5"/>
+  <rect x="3" y="8" width="7" height="16" rx="2" fill="#1A1A1A" opacity="0.1"/>
+  <circle cx="3" cy="13.5" r="2" fill="#F7F5F0" stroke="#1A1A1A" stroke-width="1.2"/>
+  <circle cx="3" cy="18.5" r="2" fill="#F7F5F0" stroke="#1A1A1A" stroke-width="1.2"/>
+  <line x1="10" y1="9" x2="10" y2="23" stroke="#1A1A1A" stroke-width="1.2" stroke-dasharray="2 2.5" stroke-linecap="round"/>
+  <circle cx="14.5" cy="16" r="1.2" fill="#1A1A1A"/>
+  <line x1="16" y1="16" x2="21" y2="16" stroke="#1A1A1A" stroke-width="1.2" stroke-dasharray="1.5 2" stroke-linecap="round"/>
+  <path d="M22.5 14.5 L25 16 L22.5 17.5" stroke="#1A1A1A" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

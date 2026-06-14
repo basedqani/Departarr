@@ -12,19 +12,6 @@ interface Props {
   index?: number
 }
 
-// Brand colors for major carriers, keyed by 2-letter IATA prefix.
-const AIRLINE_COLORS: Record<string, string> = {
-  DL: '#003366', AA: '#0078D2', UA: '#005daa', BA: '#075aaa',
-  LH: '#05164d', AF: '#002157', NH: '#13448f', EK: '#d71921',
-  QF: '#e0001b', AC: '#d22630', KL: '#00a1de', IB: '#d40f14',
-  SQ: '#f99f1c', CX: '#006564', VS: '#e10a0a',
-}
-
-function airlineColor(flight: Flight): string {
-  const prefix = (flight.airlineIata ?? flight.ident).slice(0, 2).toUpperCase()
-  return AIRLINE_COLORS[prefix] ?? 'var(--accent)'
-}
-
 function RouteLine(): React.ReactElement {
   return (
     <span className="flight-route-line">
@@ -51,18 +38,8 @@ function countdownColor(flight: Flight): string {
   const depTime = new Date(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled).getTime()
   const diff = depTime - Date.now()
   const hasDeparted = !!flight.departureActual || st === 'en-route' || st === 'departed'
-  if (!hasDeparted && diff < 30 * 60 * 1000) return 'var(--delayed)'
+  if (!hasDeparted && diff < 30 * 60 * 1000) return 'var(--cancelled)'
   return 'var(--accent)'
-}
-
-function countdownBg(flight: Flight): string {
-  const st = flight.status.toLowerCase().replace(/[\s_]+/g, '-')
-  if (st === 'cancelled' || st === 'arrived' || st === 'landed') return 'rgba(148,163,184,0.12)'
-  const depTime = new Date(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled).getTime()
-  const diff = depTime - Date.now()
-  const hasDeparted = !!flight.departureActual || st === 'en-route' || st === 'departed'
-  if (!hasDeparted && diff < 30 * 60 * 1000) return 'rgba(251,191,36,0.12)'
-  return 'var(--accent-dim)'
 }
 
 function CountdownChip({ flight }: { flight: Flight }): React.ReactElement {
@@ -71,12 +48,14 @@ function CountdownChip({ flight }: { flight: Flight }): React.ReactElement {
     <span style={{
       fontSize: '0.68rem',
       fontWeight: 600,
-      padding: '0.15rem 0.55rem',
-      borderRadius: 99,
-      background: countdownBg(flight),
+      padding: '0.12rem 0.5rem',
+      borderRadius: 3,
+      background: 'var(--surface-raised)',
+      border: '1px solid var(--hairline)',
       color: countdownColor(flight),
       letterSpacing: '0.03em',
       fontVariantNumeric: 'tabular-nums',
+      fontFamily: 'var(--font-mono)',
       whiteSpace: 'nowrap',
       flexShrink: 0,
     }}>
@@ -89,60 +68,74 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
   const depTime = flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled
   const arrTime = flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled
   const progress = flightProgress(flight)
-  const color = airlineColor(flight)
   const airlineName = getAirline(flight.airlineIata ?? flight.ident.slice(0, 2))?.name
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, delay: index * 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
-      whileTap={{ scale: 0.98 }}
+      transition={{ duration: 0.22, delay: index * 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
+      whileTap={{ scale: 0.985 }}
     >
       <Link to={`/flights/${flight.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-        <div className="card card-hover flight-card" style={{ '--airline-color': color } as React.CSSProperties}>
-          {/* Top row: route + countdown */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+        <div className="card card-hover flight-card tear-stub">
+
+          {/* Row 1: Route + Status badge */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
             <div className="flight-route">
               <span>{flight.origin}</span>
               <RouteLine />
               <span>{flight.destination}</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem', flexShrink: 0 }}>
-              <StatusBadge status={flight.status} />
+            <StatusBadge status={flight.status} />
+          </div>
+
+          {/* Row 2: Airline + flight code + time */}
+          <div className="flight-meta-row" style={{ marginTop: '0.3rem' }}>
+            <span className="flight-meta-ident">{flight.ident}</span>
+            {airlineName && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>·</span>
+            )}
+            {airlineName && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{airlineName}</span>
+            )}
+            {showDate && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{formatDate(flight.departureScheduled)}</span>
+            )}
+          </div>
+
+          {/* Perforation divider */}
+          <div className="flight-perforation" />
+
+          {/* Row 3: Seat / Gate / Boards — boarding pass 3-col grid */}
+          <div className="flight-board-row">
+            <div className="flight-board-cell">
+              <span className="pass-label">Boards</span>
+              <span className="pass-value">{formatTime(depTime)}</span>
+            </div>
+            {flight.gateDeparture ? (
+              <div className="flight-board-cell">
+                <span className="pass-label">Gate</span>
+                <span className="pass-value">{flight.gateDeparture}</span>
+              </div>
+            ) : flight.terminalDeparture ? (
+              <div className="flight-board-cell">
+                <span className="pass-label">Terminal</span>
+                <span className="pass-value">{flight.terminalDeparture}</span>
+              </div>
+            ) : (
+              <div className="flight-board-cell">
+                <span className="pass-label">Arrives</span>
+                <span className="pass-value">{formatTime(arrTime)}</span>
+              </div>
+            )}
+            <div className="flight-board-cell" style={{ alignItems: 'flex-end' }}>
+              <span className="pass-label" style={{ textAlign: 'right', width: '100%' }}>Status</span>
               <CountdownChip flight={flight} />
             </div>
           </div>
 
-          <div className="flight-perforation" />
-
-          {/* Meta row */}
-          <div className="flight-meta-row">
-            <span className="flight-meta-ident">{flight.ident}</span>
-            {airlineName && (
-              <span className="flight-meta-chip flight-meta-chip-dim">{airlineName}</span>
-            )}
-            {showDate && (
-              <span className="flight-meta-chip">{formatDate(flight.departureScheduled)}</span>
-            )}
-            <span className="flight-meta-times">{formatTime(depTime)} → {formatTime(arrTime)}</span>
-            {flight.gateDeparture && (
-              <span className="flight-meta-chip">
-                <span className="flight-meta-chip-label">Gate</span>
-                {flight.gateDeparture}
-              </span>
-            )}
-            {flight.terminalDeparture && (
-              <span className="flight-meta-chip">
-                <span className="flight-meta-chip-label">T</span>
-                {flight.terminalDeparture}
-              </span>
-            )}
-            {flight.aircraftType && (
-              <span className="flight-meta-chip flight-meta-chip-dim">{flight.aircraftType}</span>
-            )}
-          </div>
-
+          {/* In-flight progress bar */}
           {progress !== null && (
             <div className="flight-progress">
               <div className="flight-progress-fill" style={{ width: `${progress}%` }} />
@@ -150,7 +143,7 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
           )}
 
           {flight.trip && (
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.25rem' }}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               </svg>

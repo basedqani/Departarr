@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom'
+import { Logo } from './Logo'
 
-// Tab bar icons
 function IconToday(): React.ReactElement {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -61,6 +61,14 @@ export function Layout({ children }: Props): React.ReactElement {
   return (
     <div className="layout">
       <main className={`main-content${isFlightDetail ? ' no-pad-top' : ''}`}>
+        {!isFlightDetail && (
+          <header className="app-header">
+            <NavLink to="/today" className="app-wordmark">
+              <Logo size={22} />
+              Departarr
+            </NavLink>
+          </header>
+        )}
         {children}
       </main>
 
