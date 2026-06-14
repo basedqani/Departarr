@@ -99,6 +99,9 @@
    ───────────────────────────── */
 html, body, #root {
   height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -257,15 +260,17 @@ input:focus, select:focus, textarea:focus {
 .layout {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
 }
 
 /* main content sits above bottom tab bar */
 .main-content {
   flex: 1;
-  padding: 1rem;
-  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: calc(env(safe-area-inset-top, 0px) + 1rem) 1rem calc(5rem + env(safe-area-inset-bottom)) 1rem;
   max-width: 700px;
   margin: 0 auto;
   width: 100%;

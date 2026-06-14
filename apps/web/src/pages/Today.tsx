@@ -21,12 +21,18 @@ function EmptyState(): React.ReactElement {
       transition={{ duration: 0.3 }}
     >
       <motion.svg
-        width="72" height="72" viewBox="0 0 64 64" fill="none"
-        style={{ margin: '0 auto 1.25rem', display: 'block' }}
+        width="72" height="72" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"
+        style={{ margin: '0 auto 1.25rem', display: 'block', color: 'var(--text-muted)' }}
         initial={{ rotate: -8 }} animate={{ rotate: 0 }} transition={{ type: 'spring', stiffness: 120, damping: 12 }}
       >
-        <circle cx="32" cy="32" r="30" stroke="var(--accent)" strokeWidth="2" opacity="0.25" />
-        <path d="M44 38v-4l-16-10V12c0-1.66-1.34-3-3-3s-3 1.34-3 3v12L6 34v4l16-5v10l-4 3v3l7-2 7 2v-3l-4-3V33l16 5z" fill="var(--accent)" opacity="0.85" />
+        <rect x="1.5" y="6" width="29" height="20" rx="2.5" stroke="currentColor" strokeWidth="2" fill="none" />
+        <circle cx="1.5" cy="13" r="2.5" fill="var(--bg)" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="1.5" cy="19" r="2.5" fill="var(--bg)" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="8" y1="8" x2="8" y2="24" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 2.5" strokeLinecap="round" />
+        <rect x="2" y="6.5" width="6" height="19" fill="currentColor" opacity="0.12" rx="1.5" />
+        <circle cx="14" cy="16" r="1.5" fill="currentColor" />
+        <line x1="16" y1="16" x2="22" y2="16" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 2" strokeLinecap="round" />
+        <path d="M24 14.5 L26.5 16 L24 17.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </motion.svg>
       <h3>No flights today</h3>
       <p style={{ maxWidth: 320, margin: '0.25rem auto 1.5rem' }}>
