@@ -123,14 +123,22 @@ export async function syncCalendarForUser(userId: string): Promise<number> {
             if (!date) continue
 
             // Skip if already tracked (dedup against existing flights).
+            // Widen to ±2 days around the event date so UTC day-boundary shifts
+            // (e.g. 9:21 pm ET → next UTC day) can't cause a miss.
+            // Also constrain by route when origin/dest are known, so two legs of
+            // the same flight number on the same day aren't collapsed.
+            const dayStart = new Date(`${date}T00:00:00Z`).getTime()
             const existing = await prisma.flight.findFirst({
               where: {
                 userId,
                 ident: flight.ident,
                 departureScheduled: {
-                  gte: new Date(`${date}T00:00:00Z`),
-                  lt: new Date(`${date}T23:59:59Z`),
+                  gte: new Date(dayStart - 36 * 3600 * 1000),
+                  lt: new Date(dayStart + 60 * 3600 * 1000),
                 },
+                ...(flight.origin && flight.dest
+                  ? { origin: flight.origin, destination: flight.dest }
+                  : {}),
               },
             })
             if (existing) continue
