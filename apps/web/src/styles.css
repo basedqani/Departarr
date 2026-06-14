@@ -327,7 +327,6 @@ input:focus, select:focus, textarea:focus {
   z-index: 200;
   display: flex;
   align-items: stretch;
-  height: calc(4rem + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   background: rgba(247,245,240,0.92);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
