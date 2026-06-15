@@ -130,17 +130,18 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
             const date = extractEventDate(start as { date?: string; dateTime?: string })
             if (!date) continue
 
+            console.log(`[calendar] Processing flight ${flight.ident} on ${date} (event: ${event.id ?? 'no-id'})`)
+
             // Layer 1: precise dedup by calendar event ID
             if (event.id) {
               const byEventId = await prisma.flight.findFirst({
                 where: { userId, calendarEventId: event.id },
               })
-              if (byEventId) continue
+              if (byEventId) {
+                console.log(`[calendar] ${flight.ident} on ${date} already in DB by event ID, skipping`)
+                continue
+              }
             }
-
-            // Only import upcoming flights — past flights must be added manually
-            const flightDate = new Date(date + 'T23:59:59Z')
-            if (flightDate < new Date()) continue
 
             // Layer 2: fallback dedup by ident + date range (catches manual vs calendar dupes)
             const dayStart = new Date(`${date}T00:00:00Z`).getTime()
@@ -154,7 +155,10 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                 },
               },
             })
-            if (byFlight) continue
+            if (byFlight) {
+              console.log(`[calendar] ${flight.ident} on ${date} already in DB by ident+date, skipping`)
+              continue
+            }
 
             try {
               const departureUtc =
@@ -183,9 +187,39 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
               }
 
               if (!flightData) {
-                // No AeroDataBox data — skip entirely. Past flights are blocked
-                // above; for future flights this means the flight isn't
-                // recognised yet (too far out) — don't create a stub.
+                // AeroDataBox doesn't know about this flight yet (too far out, or
+                // unrecognised flight number). Save a stub using data from the
+                // calendar event so the user can see it in the UI.
+                console.log(`[calendar] ${flight.ident} on ${date}: no AeroDataBox data, saving stub from calendar event`)
+                const stubDeparture = departureUtc ? new Date(departureUtc) : new Date(`${date}T00:00:00Z`)
+                // Estimate arrival as 2h after departure when we have no real data
+                const stubArrival = new Date(stubDeparture.getTime() + 2 * 60 * 60 * 1000)
+                await prisma.flight.create({
+                  data: {
+                    userId,
+                    ident: flight.ident,
+                    faFlightId: null,
+                    airlineIata: flight.ident.match(/^([A-Z]{2})\d/)?.[1] ?? null,
+                    flightNumber: flight.ident.replace(/^[A-Z]{2}/, '') ?? null,
+                    origin: flight.origin ?? '',
+                    destination: flight.dest ?? '',
+                    departureScheduled: stubDeparture,
+                    departureEstimated: null,
+                    arrivalScheduled: stubArrival,
+                    arrivalEstimated: null,
+                    status: 'scheduled',
+                    gateDeparture: null,
+                    gateArrival: null,
+                    terminalDeparture: null,
+                    terminalArrival: null,
+                    baggageClaim: null,
+                    aircraftType: null,
+                    registration: null,
+                    calendarEventId: event.id ?? null,
+                    lastPolledAt: null,
+                  },
+                })
+                flightsAdded++
                 continue
               }
 
@@ -215,6 +249,7 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                 },
               })
               flightsAdded++
+              console.log(`[calendar] Added flight ${flight.ident} on ${date}`)
             } catch (err) {
               const code = (err as { code?: string }).code
               if (code === 'P2002') {
@@ -238,20 +273,45 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
               const eventDate = extractEventDate(start as { date?: string; dateTime?: string })
               if (!eventDate) continue
 
-              // Only import upcoming trains
-              const trainDate = new Date(eventDate + 'T23:59:59Z')
-              if (trainDate < new Date()) continue
+              console.log(`[calendar] Processing train ${detected.trainNumber} on ${eventDate} (event: ${event.id ?? 'no-id'})`)
 
               // Dedup by calendar event ID
               if (event.id) {
                 const existing = await prisma.train.findFirst({
                   where: { userId, calendarEventId: event.id },
                 })
-                if (existing) continue
+                if (existing) {
+                  console.log(`[calendar] Train ${detected.trainNumber} on ${eventDate} already in DB by event ID, skipping`)
+                  continue
+                }
               }
 
               const schedule = await lookupTrainSchedule(detected.trainNumber, eventDate)
-              if (!schedule) continue
+              if (!schedule) {
+                // GTFS doesn't have this train — save a stub from calendar event data
+                console.log(`[calendar] Train ${detected.trainNumber} on ${eventDate}: no GTFS data, saving stub from calendar event`)
+                const eventStartDateTime = (start as { date?: string; dateTime?: string }).dateTime
+                const stubDeparture = eventStartDateTime ? new Date(eventStartDateTime) : new Date(`${eventDate}T00:00:00Z`)
+                const stubArrival = new Date(stubDeparture.getTime() + 2 * 60 * 60 * 1000)
+                await prisma.train.create({
+                  data: {
+                    userId,
+                    calendarEventId: event.id ?? null,
+                    trainNumber: detected.trainNumber,
+                    trainName: null,
+                    origin: detected.boardingStation ?? '',
+                    destination: '',
+                    originName: null,
+                    destinationName: null,
+                    departureScheduled: stubDeparture,
+                    arrivalScheduled: stubArrival,
+                    stopsJson: null,
+                    status: 'scheduled',
+                  },
+                })
+                trainsAdded++
+                continue
+              }
 
               let origin = schedule.origin
               let originName = schedule.originName ?? null
@@ -338,6 +398,7 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                 },
               })
               trainsAdded++
+              console.log(`[calendar] Added train ${detected.trainNumber} on ${eventDate}`)
             } catch (err) {
               const code = (err as { code?: string }).code
               if (code === 'P2002') {
