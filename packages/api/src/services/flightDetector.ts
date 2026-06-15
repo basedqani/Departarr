@@ -63,7 +63,10 @@ const AIRPORT_CODE_RE = /\b[A-Z]{3}\b/g
 
 // Route pattern: two 3-letter codes joined by a direction token.
 // Supports: HKG → JFK, HKG TO JFK, HKG/JFK, (HKG) to (JFK), FROM HKG TO JFK
-const ROUTE_RE = /\(?([A-Z]{3})\)?\s*(?:TO|→|->|–|—|›|>|-|\/)\s*\(?([A-Z]{3})\)?|FROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})/
+// IMPORTANT: \b word boundaries ensure we only match standalone 3-letter airport
+// codes and not substrings of longer words (e.g. "fliGHT TO MINneapolis" must
+// NOT produce GHT→MIN).
+const ROUTE_RE = /\b([A-Z]{3})\b\s*(?:→|->|–|—|›|>)\s*\b([A-Z]{3})\b|\b([A-Z]{3})\b\s*\/\s*\b([A-Z]{3})\b|\bFROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b/
 
 // Common IATA airline prefixes — used as a strong positive signal.
 const KNOWN_IATA_PREFIXES = new Set([
@@ -149,12 +152,12 @@ export function detectFlightsInText(text: string): DetectedFlight[] {
 
   // Collect all route matches with their positions for per-flight lookup.
   const allRouteMatches: Array<{ index: number; origin: string; dest: string }> = []
-  const routeReGlobal = /\(?([A-Z]{3})\)?\s*(?:TO|→|->|–|—|›|>|-|\/)\s*\(?([A-Z]{3})\)?|FROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})/g
+  const routeReGlobal = /\b([A-Z]{3})\b\s*(?:→|->|–|—|›|>)\s*\b([A-Z]{3})\b|\b([A-Z]{3})\b\s*\/\s*\b([A-Z]{3})\b|\bFROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b/g
   let rm: RegExpExecArray | null
   while ((rm = routeReGlobal.exec(upperText)) !== null) {
-    // Groups 1&2 for separator pattern, groups 3&4 for FROM…TO pattern
-    const origin = rm[1] ?? rm[3]
-    const dest = rm[2] ?? rm[4]
+    // Groups 1&2 for arrow/symbol pattern, 3&4 for slash, 5&6 for FROM…TO
+    const origin = rm[1] ?? rm[3] ?? rm[5]
+    const dest = rm[2] ?? rm[4] ?? rm[6]
     if (origin && dest) {
       allRouteMatches.push({ index: rm.index, origin, dest })
     }
