@@ -7,6 +7,24 @@ import { detectTrainsInEvent } from './trainDetector.js'
 import { lookupTrainSchedule } from './gtfs.js'
 import type { FastifyRequest } from 'fastify'
 
+type CalendarTime = { date?: string | null; dateTime?: string | null }
+type CalendarEventLike = { start?: CalendarTime | null; end?: CalendarTime | null }
+
+/**
+ * Returns true if the event is already entirely in the past — i.e. its arrival
+ * (end) time, or start time when there's no end, is before now. We do NOT import
+ * such events: past items should only ever be ones that aged into Past naturally.
+ */
+function isEventInPast(event: CalendarEventLike): boolean {
+  const end = event.end ?? null
+  const start = event.start ?? null
+  const ref = end?.dateTime ?? end?.date ?? start?.dateTime ?? start?.date
+  if (!ref) return false
+  const refMs = new Date(ref).getTime()
+  if (Number.isNaN(refMs)) return false
+  return refMs < Date.now()
+}
+
 async function getOAuthClient(req?: FastifyRequest) {
   const clientId = await getSettingWithEnvFallback('google_client_id', 'GOOGLE_CLIENT_ID')
   const clientSecret = await getSettingWithEnvFallback('google_client_secret', 'GOOGLE_CLIENT_SECRET')
@@ -129,6 +147,15 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
             if (!start) continue
             const date = extractEventDate(start as { date?: string; dateTime?: string })
             if (!date) continue
+
+            // Skip events that are already entirely in the past. Use the event's
+            // end (arrival) time if available, else its start time. Past items in
+            // the app should only ever be ones that aged into Past naturally —
+            // never freshly imported from a past calendar event.
+            if (isEventInPast(event)) {
+              console.log(`[calendar] flight ${flight.ident} on ${date} is in the past, skipping import`)
+              continue
+            }
 
             console.log(`[calendar] Processing flight ${flight.ident} on ${date} (event: ${event.id ?? 'no-id'})`)
 
@@ -275,6 +302,12 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
               if (!start) continue
               const eventDate = extractEventDate(start as { date?: string; dateTime?: string })
               if (!eventDate) continue
+
+              // Skip events already entirely in the past (see flight loop above).
+              if (isEventInPast(event)) {
+                console.log(`[calendar] train ${detected.trainNumber} on ${eventDate} is in the past, skipping import`)
+                continue
+              }
 
               console.log(`[calendar] Processing train ${detected.trainNumber} on ${eventDate} (event: ${event.id ?? 'no-id'})`)
 

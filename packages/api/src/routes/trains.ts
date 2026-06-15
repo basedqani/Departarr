@@ -37,16 +37,42 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
 
     let where: Record<string, unknown> = { userId }
 
+    const arrivedStatuses = ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled']
+
     if (when === 'today') {
       const startOfDay = new Date(now)
       startOfDay.setHours(0, 0, 0, 0)
       const endOfDay = new Date(now)
       endOfDay.setHours(23, 59, 59, 999)
-      where = { ...where, departureScheduled: { gte: startOfDay, lte: endOfDay } }
+      // Belongs to Today if it departs today (local) AND has not yet arrived.
+      // "Has not arrived" = now is before arrival time (actual ?? estimated ??
+      // scheduled) OR status is not arrived. Arrival time is the cutoff so an
+      // en-route train (departed but not arrived) stays on Today.
+      where = {
+        ...where,
+        departureScheduled: { gte: startOfDay, lte: endOfDay },
+        OR: [
+          { arrivalActual: { gt: now } },
+          { arrivalActual: null, arrivalEstimated: { gt: now } },
+          { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { gt: now } },
+          { status: { notIn: arrivedStatuses } },
+        ],
+      }
     } else if (when === 'upcoming') {
       where = { ...where, departureScheduled: { gt: now } }
     } else if (when === 'past') {
-      where = { ...where, departureScheduled: { lt: now } }
+      // Past only once it has actually arrived — now is AFTER arrival time
+      // (actual ?? estimated ?? scheduled) OR status is arrived. A passed
+      // DEPARTURE time alone does NOT move it to Past.
+      where = {
+        ...where,
+        OR: [
+          { arrivalActual: { lte: now } },
+          { arrivalActual: null, arrivalEstimated: { lte: now } },
+          { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { lte: now } },
+          { status: { in: arrivedStatuses } },
+        ],
+      }
     }
 
     const trains = await prisma.train.findMany({

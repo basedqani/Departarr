@@ -45,27 +45,43 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
 
     let where: Record<string, unknown> = { userId }
 
+    const arrivedStatuses = ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled']
+
     if (when === 'today') {
       const startOfDay = new Date(now)
       startOfDay.setHours(0, 0, 0, 0)
       const endOfDay = new Date(now)
       endOfDay.setHours(23, 59, 59, 999)
-      // Include flights that depart today OR flights that are still en route
-      // (departed in the past but haven't landed/arrived/cancelled yet)
+      // An item belongs to Today if its departure date is today (local) AND it
+      // has not yet arrived. "Has not arrived" = current time is before its
+      // arrival time (actual ?? estimated ?? scheduled) OR its status is not
+      // landed/arrived/cancelled. Using the ARRIVAL time as the cutoff keeps
+      // en-route flights (departed but not arrived) on Today.
       where = {
         ...where,
+        departureScheduled: { gte: startOfDay, lte: endOfDay },
         OR: [
-          { departureScheduled: { gte: startOfDay, lte: endOfDay } },
-          {
-            departureScheduled: { lt: startOfDay },
-            status: { notIn: ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled'] },
-          },
+          { arrivalActual: { gt: now } },
+          { arrivalActual: null, arrivalEstimated: { gt: now } },
+          { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { gt: now } },
+          { status: { notIn: arrivedStatuses } },
         ],
       }
     } else if (when === 'upcoming') {
       where = { ...where, departureScheduled: { gt: now } }
     } else if (when === 'past') {
-      where = { ...where, departureScheduled: { lt: now } }
+      // An item is Past only if it has actually arrived — current time is AFTER
+      // its arrival time (actual ?? estimated ?? scheduled), OR status is
+      // landed/arrived. A passed DEPARTURE time alone does NOT move it to Past.
+      where = {
+        ...where,
+        OR: [
+          { arrivalActual: { lte: now } },
+          { arrivalActual: null, arrivalEstimated: { lte: now } },
+          { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { lte: now } },
+          { status: { in: arrivedStatuses } },
+        ],
+      }
     }
 
     const flights = await prisma.flight.findMany({
