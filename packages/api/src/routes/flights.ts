@@ -70,7 +70,7 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
 
     const flights = await prisma.flight.findMany({
       where,
-      orderBy: { departureScheduled: 'asc' },
+      orderBy: { departureScheduled: 'desc' },
       include: { trip: { select: { id: true, name: true } } },
     })
     return reply.send(flights)

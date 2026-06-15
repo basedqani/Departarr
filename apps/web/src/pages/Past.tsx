@@ -295,7 +295,7 @@ type PastItem =
 
 function groupByYearMixed(items: PastItem[]): Map<string, PastItem[]> {
   const groups = new Map<string, PastItem[]>()
-  for (const item of [...items].reverse()) {
+  for (const item of items) {
     const year = new Date(item.data.departureScheduled).getFullYear().toString()
     if (!groups.has(year)) groups.set(year, [])
     groups.get(year)!.push(item)
