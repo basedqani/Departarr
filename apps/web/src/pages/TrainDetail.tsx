@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import type { TrainStop, WeatherResult } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
@@ -62,6 +62,131 @@ function WeatherSection({ weather }: { weather: WeatherResult }): React.ReactEle
         </div>
       </div>
     </section>
+  )
+}
+
+// ─── Share dialog ────────────────────────────────────────────────────────────
+
+interface TrainShareSheetProps {
+  url: string
+  trainId: string
+  trainLabel: string
+  onClose: () => void
+}
+
+function TrainShareSheet({ url, trainId, trainLabel, onClose }: TrainShareSheetProps): React.ReactElement {
+  const queryClient = useQueryClient()
+  const [copied, setCopied] = useState(false)
+  const [revoking, setRevoking] = useState(false)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  async function doCopy(): Promise<void> {
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleNativeShare(): Promise<void> {
+    if ('share' in navigator) {
+      try {
+        await (navigator as Navigator & { share: (d: object) => Promise<void> }).share({ title: `${trainLabel} · Train Status`, text: 'Track my train live', url })
+        return
+      } catch { /* user cancelled */ }
+    }
+    await doCopy()
+  }
+
+  async function handleRevoke(): Promise<void> {
+    if (!window.confirm('Revoke share link? Anyone with the current link will lose access.')) return
+    setRevoking(true)
+    try {
+      await api.trains.revokeShare(trainId)
+      await queryClient.invalidateQueries({ queryKey: ['train', trainId] })
+      onClose()
+    } catch {
+      setRevoking(false)
+    }
+  }
+
+  const hasNativeShare = 'share' in navigator
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        background: 'rgba(0,0,0,0.5)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)' as React.CSSProperties['backdropFilter'],
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--surface)',
+          borderRadius: 16,
+          padding: '1.5rem',
+          width: 'min(90vw, 420px)',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text)' }}>
+            Share {trainLabel}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0.25rem', lineHeight: 1 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div style={{ background: 'var(--surface-raised)', borderRadius: 10, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.78rem', fontFamily: 'monospace', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+          {url}
+        </div>
+        <button
+          onClick={() => void handleNativeShare()}
+          style={{ display: 'block', width: '100%', padding: '0.875rem', marginBottom: '0.5rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: 12, border: 'none', background: 'var(--accent)', color: '#000', cursor: 'pointer' }}
+        >
+          {hasNativeShare ? 'Share…' : copied ? '✓ Copied!' : 'Copy link'}
+        </button>
+        {hasNativeShare && (
+          <button
+            className="secondary"
+            onClick={() => void doCopy()}
+            style={{ display: 'block', width: '100%', padding: '0.875rem', marginBottom: '0.5rem', fontSize: '0.95rem', borderRadius: 12 }}
+          >
+            {copied ? '✓ Copied!' : 'Copy link'}
+          </button>
+        )}
+        <button
+          onClick={() => void handleRevoke()}
+          disabled={revoking}
+          style={{ display: 'block', width: '100%', padding: '0.875rem', fontSize: '0.875rem', borderRadius: 12, background: 'transparent', border: '1px solid rgba(248,113,113,0.3)', color: 'var(--cancelled)', cursor: 'pointer' }}
+        >
+          {revoking ? 'Revoking…' : 'Revoke link'}
+        </button>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -193,6 +318,8 @@ export function TrainDetailPage(): React.ReactElement {
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [shareSheet, setShareSheet] = useState<{ url: string } | null>(null)
+  const [sharing, setSharing] = useState(false)
 
   const { data: train, isLoading } = useQuery({
     queryKey: ['train', id],
@@ -270,6 +397,7 @@ export function TrainDetailPage(): React.ReactElement {
   }
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -299,6 +427,28 @@ export function TrainDetailPage(): React.ReactElement {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+            {!confirmDelete && (
+              <button
+                className="secondary"
+                style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
+                disabled={sharing}
+                onClick={async () => {
+                  if (sharing) return
+                  setSharing(true)
+                  try {
+                    const res = await api.trains.share(id!)
+                    const full = res.url.startsWith('/') ? `${window.location.origin}${res.url}` : res.url
+                    setShareSheet({ url: full })
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : 'Could not create share link')
+                  } finally {
+                    setSharing(false)
+                  }
+                }}
+              >
+                {sharing ? '…' : 'Share'}
+              </button>
+            )}
             {confirmDelete ? (
               <>
                 <button className="secondary" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => setConfirmDelete(false)} disabled={deleting}>
@@ -349,6 +499,8 @@ export function TrainDetailPage(): React.ReactElement {
             stops={gtfsStops}
             departureScheduled={train.departureScheduled}
             status={train.status}
+            origin={train.origin}
+            destination={train.destination}
           />
         )}
 
@@ -386,5 +538,17 @@ export function TrainDetailPage(): React.ReactElement {
         )}
       </div>
     </motion.div>
+
+    <AnimatePresence>
+      {shareSheet && (
+        <TrainShareSheet
+          url={shareSheet.url}
+          trainId={id!}
+          trainLabel={`Train ${train.trainNumber}${train.trainName ? ` · ${train.trainName}` : ''}`}
+          onClose={() => setShareSheet(null)}
+        />
+      )}
+    </AnimatePresence>
+    </>
   )
 }

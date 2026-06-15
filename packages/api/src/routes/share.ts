@@ -8,6 +8,38 @@ function generateToken(): string {
 }
 
 export async function shareRoutes(app: FastifyInstance): Promise<void> {
+  // POST /api/trains/:id/share — create share token for a train (auth required)
+  app.post('/trains/:id/share', { preHandler: authMiddleware }, async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const { id } = req.params as { id: string }
+
+    const train = await prisma.train.findFirst({ where: { id, userId } })
+    if (!train) return reply.code(404).send({ error: 'Train not found' })
+
+    const token = generateToken()
+    const shareToken = await prisma.shareToken.create({
+      data: { trainId: id, token },
+    })
+
+    const url = `${process.env.APP_URL ?? ''}/share/${shareToken.token}`
+    return reply.code(201).send({ token: shareToken.token, url })
+  })
+
+  // DELETE /api/trains/:id/share — revoke all share tokens for a train (auth required)
+  app.delete('/trains/:id/share', { preHandler: authMiddleware }, async (req, reply) => {
+    const userId = (req.user as { id: string }).id
+    const { id } = req.params as { id: string }
+
+    const train = await prisma.train.findFirst({ where: { id, userId } })
+    if (!train) return reply.code(404).send({ error: 'Train not found' })
+
+    await prisma.shareToken.updateMany({
+      where: { trainId: id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    })
+    return reply.code(204).send()
+  })
+
   // POST /api/flights/:id/share — create share token (auth required)
   app.post('/flights/:id/share', { preHandler: authMiddleware }, async (req, reply) => {
     const userId = (req.user as { id: string }).id
@@ -101,6 +133,12 @@ export async function shareRoutes(app: FastifyInstance): Promise<void> {
         trip: {
           include: {
             flights: { orderBy: { departureScheduled: 'asc' } },
+            trains: { orderBy: { departureScheduled: 'asc' } },
+          },
+        },
+        train: {
+          include: {
+            events: { orderBy: { occurredAt: 'desc' }, take: 20 },
           },
         },
       },
@@ -113,6 +151,7 @@ export async function shareRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({
       flight: shareToken.flight,
       trip: shareToken.trip,
+      train: shareToken.train,
     })
   })
 }

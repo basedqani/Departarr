@@ -94,16 +94,19 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
       if (stopInfo) {
         origin = stopInfo.code
         originName = stopInfo.name
-        if (bs.schDep) {
-          const [h, m] = bs.schDep.split(':').map(Number)
-          const d = new Date(schedule.departureScheduled)
-          d.setUTCHours(h, m, 0, 0)
-          departureScheduled = d
-        } else if (stopInfo.scheduledDep) {
-          const [h, m] = stopInfo.scheduledDep.split(':').map(Number)
-          const d = new Date(schedule.departureScheduled)
-          d.setUTCHours(h, m, 0, 0)
-          departureScheduled = d
+        // Offset the departure time from the route origin using GTFS time strings.
+        // GTFS times are "ms from midnight on the service date" and can exceed 24h,
+        // so we cannot use setHours/setUTCHours — compute the offset instead.
+        const parseGtfsMs = (t: string): number => {
+          const parts = t.split(':').map(Number)
+          return ((parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0)) * 1000
+        }
+        const boardingTimeStr = bs.schDep ?? stopInfo.scheduledDep
+        if (boardingTimeStr) {
+          const originStop = schedule.stops[0]
+          const originMs = parseGtfsMs(originStop.scheduledDep ?? originStop.scheduledArr ?? '0:0:0')
+          const boardingMs = parseGtfsMs(boardingTimeStr)
+          departureScheduled = new Date(schedule.departureScheduled.getTime() + (boardingMs - originMs))
         }
       }
     }

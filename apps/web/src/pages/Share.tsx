@@ -103,6 +103,7 @@ export function SharePage(): React.ReactElement {
   })
 
   const flight = data?.flight
+  const train = data?.train
 
   // Countdown — must be before any early return (Rules of Hooks)
   const countdown = useCountdown(flight)
@@ -132,7 +133,7 @@ export function SharePage(): React.ReactElement {
     )
   }
 
-  if (isError || !data || (!data.flight && !data.trip)) {
+  if (isError || !data || (!data.flight && !data.trip && !data.train)) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', color: 'var(--text)', padding: '1.5rem' }}>
         <div className="auth-card" style={{ textAlign: 'center' }}>
@@ -190,7 +191,7 @@ export function SharePage(): React.ReactElement {
             <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" />
           </svg>
           <span style={{ fontWeight: 700, color: 'var(--text)' }}>Departarr</span>
-          <span>· Flight Status</span>
+          <span>· {train ? 'Train Status' : 'Flight Status'}</span>
         </div>
 
         {flight && (
@@ -282,6 +283,58 @@ export function SharePage(): React.ReactElement {
             )}
 
             {/* Push subscribe for guests */}
+            <SharePushButton token={token!} />
+          </div>
+        )}
+
+        {/* Train card */}
+        {train && (
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+              <div>
+                <div className="detail-route" style={{ fontSize: '1.9rem' }}>
+                  <span>{train.origin}</span>
+                  <span className="detail-route-sep">›</span>
+                  <span>{train.destination}</span>
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '0.25rem' }}>
+                  Train {train.trainNumber}{train.trainName ? ` · ${train.trainName}` : ''}
+                </div>
+              </div>
+              <StatusBadge status={train.status} />
+            </div>
+
+            <div className="info-grid" style={{ marginTop: 0 }}>
+              <div className="info-cell">
+                <div className="info-cell-label">Departs</div>
+                <div className="info-cell-value">
+                  {new Date(train.departureActual ?? train.departureEstimated ?? train.departureScheduled).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{train.originName ?? train.origin}</div>
+              </div>
+              <div className="info-cell">
+                <div className="info-cell-label">Arrives</div>
+                <div className="info-cell-value">
+                  {new Date(train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{train.destinationName ?? train.destination}</div>
+              </div>
+            </div>
+
+            {train.events && train.events.length > 0 && (
+              <div style={{ marginTop: '1rem' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Recent Updates
+                </div>
+                {train.events.slice(0, 5).map((ev, i) => (
+                  <div key={ev.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.45rem 0', borderBottom: i < 4 ? '1px solid var(--hairline)' : 'none', fontSize: '0.85rem' }}>
+                    <span style={{ textTransform: 'capitalize', fontWeight: 500 }}>{ev.eventType.replace(/_/g, ' ')}</span>
+                    <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{formatDateTime(ev.occurredAt)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <SharePushButton token={token!} />
           </div>
         )}

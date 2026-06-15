@@ -103,6 +103,8 @@ model ShareToken {
   flight    Flight?   @relation(fields: [flightId], references: [id], onDelete: Cascade)
   tripId    String?
   trip      Trip?     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  trainId   String?
+  train     Train?    @relation(fields: [trainId], references: [id], onDelete: Cascade)
   token     String    @unique
   createdAt DateTime  @default(now())
   revokedAt DateTime?
@@ -164,6 +166,7 @@ model Train {
   lastPolledAt        DateTime?
   createdAt           DateTime      @default(now())
   events              TrainEvent[]
+  shareTokens         ShareToken[]
 
   @@unique([userId, calendarEventId])
 }

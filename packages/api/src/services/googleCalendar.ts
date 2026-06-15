@@ -267,15 +267,29 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                 if (boardingStop) {
                   origin = boardingStop.code
                   originName = boardingStop.name
-                  // Use the boarding stop's scheduled departure time
+                  // Compute departure time by offsetting from origin stop's GTFS time.
+                  // We can't use setHours() here because GTFS times are "hours from midnight
+                  // on the service date" and may exceed 24 (overnight trains).
                   if (boardingStop.scheduledDep) {
-                    const [h, m] = boardingStop.scheduledDep.split(':').map(Number)
-                    const d = new Date(schedule.departureScheduled)
-                    d.setHours(h, m, 0, 0)
-                    departureScheduled = d
+                    const parseGtfsMs = (t: string): number => {
+                      const parts = t.split(':').map(Number)
+                      return ((parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0)) * 1000
+                    }
+                    const originStop = schedule.stops[0]
+                    const originMs = parseGtfsMs(originStop.scheduledDep ?? originStop.scheduledArr ?? '0:0:0')
+                    const boardingMs = parseGtfsMs(boardingStop.scheduledDep)
+                    departureScheduled = new Date(schedule.departureScheduled.getTime() + (boardingMs - originMs))
                   }
                   console.log(`[calendar] Train ${detected.trainNumber}: boarding at ${origin} (${originName}) not route origin ${schedule.origin}`)
                 }
+              }
+
+              // For calendar-synced trains, the event's own start time is the most
+              // accurate departure time — it comes directly from the Amtrak booking
+              // confirmation, so prefer it over the GTFS-derived time.
+              const eventStartDateTime = (start as { date?: string; dateTime?: string }).dateTime
+              if (eventStartDateTime) {
+                departureScheduled = new Date(eventStartDateTime)
               }
 
               await prisma.train.create({

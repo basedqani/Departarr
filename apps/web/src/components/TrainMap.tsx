@@ -14,6 +14,10 @@ interface Props {
   stops: GtfsStop[]
   departureScheduled: string
   status: string
+  /** Boarding station code — map viewport focuses on user's segment, not full route */
+  origin?: string
+  /** Alighting station code */
+  destination?: string
 }
 
 // Train icon SVG (points up at 0°, matches icon-rotate convention)
@@ -130,7 +134,7 @@ function classifyStops(
   })
 }
 
-export function TrainMap({ stops, departureScheduled, status }: Props): React.ReactElement | null {
+export function TrainMap({ stops, departureScheduled, status, origin, destination }: Props): React.ReactElement | null {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('maplibre-gl').Map | null>(null)
 
@@ -147,7 +151,7 @@ export function TrainMap({ stops, departureScheduled, status }: Props): React.Re
 
       const map = new maplibre.Map({
         container: containerRef.current!,
-        style: 'https://tiles.openfreemap.org/styles/liberty',
+        style: 'https://tiles.openfreemap.org/styles/positron',
         center: [stops[0].lon, stops[0].lat],
         zoom: 5,
         attributionControl: false,
@@ -295,9 +299,21 @@ export function TrainMap({ stops, departureScheduled, status }: Props): React.Re
         }
         trainImg.src = TRAIN_ICON_URI
 
-        // ── Fit bounds to route ───────────────────────────────────────────────
-        const lons = stops.map(s => s.lon)
-        const lats = stops.map(s => s.lat)
+        // ── Fit bounds to the user's segment (boarding → destination) ────────
+        // Clip to only the stops between the user's boarding and alighting
+        // station so e.g. boarding at STP on the Empire Builder doesn't zoom
+        // all the way out to show the Seattle origin.
+        const boardingIdx = origin ? stops.findIndex(s => s.code === origin) : -1
+        const alightingIdx = destination
+          ? stops.map(s => s.code).lastIndexOf(destination)
+          : -1
+        const segmentStops =
+          boardingIdx >= 0 && alightingIdx > boardingIdx
+            ? stops.slice(boardingIdx, alightingIdx + 1)
+            : stops
+
+        const lons = segmentStops.map(s => s.lon)
+        const lats = segmentStops.map(s => s.lat)
         try {
           map.fitBounds(
             [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],

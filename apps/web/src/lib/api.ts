@@ -91,6 +91,10 @@ export const api = {
     delete: (id: string) => request<void>(`/trains/${id}`, { method: 'DELETE' }),
     weather: (id: string, unit: 'F' | 'C' = 'F') =>
       request<WeatherResult>(`/trains/${id}/weather?units=${unit === 'F' ? 'imperial' : 'metric'}`),
+    share: (id: string) =>
+      request<{ token: string; url: string }>(`/trains/${id}/share`, { method: 'POST' }),
+    revokeShare: (id: string) =>
+      request<void>(`/trains/${id}/share`, { method: 'DELETE' }),
   },
 
   trips: {
@@ -108,7 +112,7 @@ export const api = {
 
   share: {
     get: (token: string) =>
-      request<{ flight?: FlightWithEvents; trip?: TripWithLegs }>(`/share/${token}`),
+      request<{ flight?: FlightWithEvents; trip?: TripWithLegs; train?: TrainWithEvents }>(`/share/${token}`),
     pushSubscribe: (token: string, sub: PushSubscriptionJSON) =>
       request<{ ok: boolean }>(`/share/${token}/push-subscribe`, { method: 'POST', body: JSON.stringify(sub) }),
     pushUnsubscribe: (token: string, endpoint: string) =>
