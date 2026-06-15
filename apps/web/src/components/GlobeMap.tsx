@@ -104,25 +104,31 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
           try {
             const start = point([originAirport.lon, originAirport.lat])
             const end = point([destAirport.lon, destAirport.lat])
-            const arc = greatCircle(start, end, { npoints: 100 })
+            const arc = greatCircle(start, end, { npoints: 128 })
 
-            // Turf splits the arc into a MultiLineString at the antimeridian
-            // (±180°), leaving a visible gap in the line. Fix: unwrap the second
-            // segment's longitudes by ±360° so the whole route is one continuous
-            // LineString. MapLibre Mercator handles coords outside [-180,180].
+            // Turf splits antimeridian-crossing arcs into a MultiLineString at
+            // ±180°. Naively rejoining the segments leaves a longitude jump that
+            // MapLibre draws as a spurious horizontal line spanning the map.
+            // Robust fix: FLATTEN any MultiLineString into one ordered point list,
+            // then "unwrap" longitudes so each successive point is within 180° of
+            // the previous one (add/subtract 360° as needed). This yields a single
+            // continuous, monotonic LineString with no jumps — MapLibre's Mercator
+            // projection handles longitudes outside [-180, 180] fine.
             const rawCoords = arc.geometry.coordinates as [number, number][] | [number, number][][]
-            const isMultiSeg = Array.isArray(rawCoords[0][0])
-            let arcCoords: [number, number][]
-            if (isMultiSeg) {
-              const segs = rawCoords as [number, number][][]
-              const lastLon = segs[0][segs[0].length - 1][0]
-              const firstLon = segs[1][0][0]
-              // Choose the offset that keeps the second segment continuous
-              const offset = Math.abs(lastLon + 360 - firstLon) < Math.abs(lastLon - 360 - firstLon) ? 360 : -360
-              const unwrapped = segs[1].map(([lon, lat]) => [lon + offset, lat] as [number, number])
-              arcCoords = [...segs[0] as [number, number][], ...unwrapped]
-            } else {
-              arcCoords = rawCoords as [number, number][]
+            const isMultiSeg = rawCoords.length > 0 && Array.isArray(rawCoords[0][0])
+            const flat: [number, number][] = isMultiSeg
+              ? (rawCoords as [number, number][][]).flat()
+              : (rawCoords as [number, number][])
+
+            const arcCoords: [number, number][] = []
+            for (let i = 0; i < flat.length; i++) {
+              let [lon, lat] = flat[i]
+              if (i > 0) {
+                const prevLon = arcCoords[i - 1][0]
+                while (lon - prevLon > 180) lon -= 360
+                while (lon - prevLon < -180) lon += 360
+              }
+              arcCoords.push([lon, lat])
             }
             arcCoordsRef.current = arcCoords
 
