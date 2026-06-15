@@ -46,7 +46,7 @@ export function AddFlightPage(): React.ReactElement {
   const [preview, setPreview] = useState<FlightPreview | null>(null)
   const [trainPreview, setTrainPreview] = useState<TrainPreview | null>(null)
   const [boardingStopCode, setBoardingStopCode] = useState<string>('')
-  const [alightingStopCode, setAlightingStopCode] = useState<string>('')
+  const [arrivingStopCode, setArrivingStopCode] = useState<string>('')
 
   const { data: trips } = useQuery({ queryKey: ['trips'], queryFn: api.trips.list })
 
@@ -59,7 +59,7 @@ export function AddFlightPage(): React.ReactElement {
         const tp = await api.trains.lookup(ident.trim(), date)
         setTrainPreview(tp)
         setBoardingStopCode(tp.origin)
-        setAlightingStopCode(tp.destination)
+        setArrivingStopCode(tp.destination)
         setStep('confirm')
       } else {
         const clean = ident.toUpperCase().replace(/\s+/g, '')
@@ -99,7 +99,7 @@ export function AddFlightPage(): React.ReactElement {
       try {
         const boardingStop = trainPreview.stops.find(s => s.code === boardingStopCode)
         const origin = boardingStopCode || trainPreview.origin
-        const destination = alightingStopCode || trainPreview.destination
+        const destination = arrivingStopCode || trainPreview.destination
         const train = await api.trains.add({
           trainNumber: ident.trim(),
           date,
@@ -346,20 +346,20 @@ export function AddFlightPage(): React.ReactElement {
                 <div className="detail-route" style={{ fontSize: '1.75rem' }}>
                   <span>{boardingStopCode || trainPreview.origin}</span>
                   <span className="detail-route-sep">›</span>
-                  <span>{alightingStopCode || trainPreview.destination}</span>
+                  <span>{arrivingStopCode || trainPreview.destination}</span>
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '0.25rem' }}>
                   Train {trainPreview.trainNumber}{trainPreview.trainName ? ` · ${trainPreview.trainName}` : ''}
                 </div>
                 {(() => {
                   const boardingStop = trainPreview.stops.find(s => s.code === boardingStopCode)
-                  const alightingStop = trainPreview.stops.find(s => s.code === alightingStopCode)
+                  const alightingStop = trainPreview.stops.find(s => s.code === arrivingStopCode)
                   const boardingName = boardingStop?.name ?? trainPreview.originName
                   const alightingName = alightingStop?.name ?? trainPreview.destinationName
                   return (boardingName || alightingName) ? (
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                       <span>{boardingName ?? boardingStopCode}</span>
-                      <span>{alightingName ?? alightingStopCode}</span>
+                      <span>{alightingName ?? arrivingStopCode}</span>
                     </div>
                   ) : null
                 })()}
@@ -389,8 +389,8 @@ export function AddFlightPage(): React.ReactElement {
                       Arriving at
                     </label>
                     <select
-                      value={alightingStopCode}
-                      onChange={e => setAlightingStopCode(e.target.value)}
+                      value={arrivingStopCode}
+                      onChange={e => setArrivingStopCode(e.target.value)}
                       style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: 10, border: '1px solid var(--hairline)', background: 'var(--card)', color: 'var(--text)', fontSize: '0.82rem', appearance: 'none', cursor: 'pointer' }}
                     >
                       {trainPreview.stops.map((stop, i) => (
@@ -423,7 +423,7 @@ export function AddFlightPage(): React.ReactElement {
                     {(() => {
                       const originStop = trainPreview.stops[0]
                       const lastStop = trainPreview.stops[trainPreview.stops.length - 1]
-                      const sel = trainPreview.stops.find(s => s.code === alightingStopCode)
+                      const sel = trainPreview.stops.find(s => s.code === arrivingStopCode)
                       const gtfsMs = (t: string) => { const [h,m,s] = t.split(':').map(Number); return ((h??0)*3600+(m??0)*60+(s??0))*1000 }
                       const base = gtfsMs(originStop.schDep ?? originStop.schArr ?? '0:0:0')
                       const offset = gtfsMs(sel?.schArr ?? sel?.schDep ?? lastStop.schArr ?? lastStop.schDep ?? '0:0:0') - base

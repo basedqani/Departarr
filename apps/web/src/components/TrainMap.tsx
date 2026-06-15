@@ -16,7 +16,7 @@ interface Props {
   status: string
   /** Boarding station code — map viewport focuses on user's segment, not full route */
   origin?: string
-  /** Alighting station code */
+  /** Arriving station code */
   destination?: string
 }
 
@@ -165,12 +165,12 @@ export function TrainMap({ stops, departureScheduled, status, origin, destinatio
 
         // ── Clip stops to the user's segment ─────────────────────────────────
         // All stops from the full route are stored, but we only draw and frame
-        // the portion the user is actually riding (boarding → alighting).
+        // the portion the user is actually riding (boarding → arriving).
         const boardingIdx = origin ? stops.findIndex(s => s.code === origin) : -1
-        const alightingIdx = destination ? stops.map(s => s.code).lastIndexOf(destination) : -1
+        const arrivingIdx = destination ? stops.map(s => s.code).lastIndexOf(destination) : -1
         const segmentStops =
-          boardingIdx >= 0 && alightingIdx > boardingIdx
-            ? stops.slice(boardingIdx, alightingIdx + 1)
+          boardingIdx >= 0 && arrivingIdx > boardingIdx
+            ? stops.slice(boardingIdx, arrivingIdx + 1)
             : stops
 
         // ── Route polyline ────────────────────────────────────────────────────
