@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
 import { TrainCard } from '../components/TrainCard'
 import { ConnectionBadge } from '../components/ConnectionBadge'
+import { InlineConnectionBadge } from '../components/InlineConnectionBadge'
 import { TripCard } from '../components/TripCard'
 import { buildDisplayItems } from '../lib/tripGrouping'
 
@@ -109,10 +110,20 @@ export function TodayPage(): React.ReactElement {
           return <TripCard key={item.tripId} group={item} index={i} />
         }
         if (item.type === 'auto-itinerary') {
-          return item.legs.map((leg, li) =>
-            leg.legType === 'flight'
-              ? <FlightCard key={leg.data.id} flight={leg.data} index={i + li} />
-              : <TrainCard key={leg.data.id} train={leg.data} index={i + li} />
+          const legIds = item.legs.map(l => l.data.id).join('-')
+          return (
+            <div key={legIds} style={{ borderLeft: '2px solid var(--accent)', paddingLeft: '0.1rem', marginBottom: '0.5rem', opacity: 0.97 }}>
+              {item.legs.map((leg, li) => (
+                <div key={leg.data.id}>
+                  {leg.legType === 'flight'
+                    ? <FlightCard flight={leg.data} index={i + li} />
+                    : <TrainCard train={leg.data} index={i + li} />}
+                  {li < item.legs.length - 1 && item.connections[li] && (
+                    <InlineConnectionBadge conn={item.connections[li]!} showGreen />
+                  )}
+                </div>
+              ))}
+            </div>
           )
         }
         if (item.type === 'standalone-train') {

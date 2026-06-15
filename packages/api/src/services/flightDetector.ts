@@ -66,7 +66,7 @@ const AIRPORT_CODE_RE = /\b[A-Z]{3}\b/g
 // IMPORTANT: \b word boundaries ensure we only match standalone 3-letter airport
 // codes and not substrings of longer words (e.g. "fliGHT TO MINneapolis" must
 // NOT produce GHT→MIN).
-const ROUTE_RE = /\b([A-Z]{3})\b\s*(?:→|->|–|—|›|>)\s*\b([A-Z]{3})\b|\b([A-Z]{3})\b\s*\/\s*\b([A-Z]{3})\b|\bFROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b/
+const ROUTE_RE = /\b([A-Z]{3})\b\s*(?:→|->|–|—|›|>)\s*\b([A-Z]{3})\b|\b([A-Z]{3})\b\s*\/\s*\b([A-Z]{3})\b|\bFROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b|\b([A-Z]{3})\b\s+TO\s+\b([A-Z]{3})\b/
 
 // Common IATA airline prefixes — used as a strong positive signal.
 const KNOWN_IATA_PREFIXES = new Set([
@@ -152,12 +152,12 @@ export function detectFlightsInText(text: string): DetectedFlight[] {
 
   // Collect all route matches with their positions for per-flight lookup.
   const allRouteMatches: Array<{ index: number; origin: string; dest: string }> = []
-  const routeReGlobal = /\b([A-Z]{3})\b\s*(?:→|->|–|—|›|>)\s*\b([A-Z]{3})\b|\b([A-Z]{3})\b\s*\/\s*\b([A-Z]{3})\b|\bFROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b/g
+  const routeReGlobal = /\b([A-Z]{3})\b\s*(?:→|->|–|—|›|>)\s*\b([A-Z]{3})\b|\b([A-Z]{3})\b\s*\/\s*\b([A-Z]{3})\b|\bFROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b|\b([A-Z]{3})\b\s+TO\s+\b([A-Z]{3})\b/g
   let rm: RegExpExecArray | null
   while ((rm = routeReGlobal.exec(upperText)) !== null) {
-    // Groups 1&2 for arrow/symbol pattern, 3&4 for slash, 5&6 for FROM…TO
-    const origin = rm[1] ?? rm[3] ?? rm[5]
-    const dest = rm[2] ?? rm[4] ?? rm[6]
+    // Groups 1&2 for arrow/symbol pattern, 3&4 for slash, 5&6 for FROM…TO, 7&8 for plain "ORD TO MSP"
+    const origin = rm[1] ?? rm[3] ?? rm[5] ?? rm[7]
+    const dest = rm[2] ?? rm[4] ?? rm[6] ?? rm[8]
     if (origin && dest) {
       allRouteMatches.push({ index: rm.index, origin, dest })
     }

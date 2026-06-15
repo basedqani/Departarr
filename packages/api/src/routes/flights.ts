@@ -40,7 +40,7 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/flights
   app.get('/flights', async (req, reply) => {
     const userId = (req.user as { id: string }).id
-    const { when } = req.query as { when?: string }
+    const { when, localDate, tzOffset } = req.query as { when?: string; localDate?: string; tzOffset?: string }
     const now = new Date()
 
     let where: Record<string, unknown> = { userId }
@@ -48,10 +48,23 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     const arrivedStatuses = ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled']
 
     if (when === 'today') {
-      const startOfDay = new Date(now)
-      startOfDay.setHours(0, 0, 0, 0)
-      const endOfDay = new Date(now)
-      endOfDay.setHours(23, 59, 59, 999)
+      // Compute start/end of the client's local calendar day in UTC.
+      // If the client sends localDate (YYYY-MM-DD) and tzOffset (minutes behind
+      // UTC, same as JS getTimezoneOffset()), use those to build precise UTC
+      // boundaries. Fall back to server-local midnight if params are absent.
+      let startOfDay: Date
+      let endOfDay: Date
+      if (localDate && tzOffset !== undefined) {
+        const offsetMs = parseInt(tzOffset, 10) * 60 * 1000
+        // localDate 00:00 local  =  localDate 00:00 UTC + offsetMs
+        startOfDay = new Date(new Date(`${localDate}T00:00:00Z`).getTime() + offsetMs)
+        endOfDay   = new Date(new Date(`${localDate}T23:59:59.999Z`).getTime() + offsetMs)
+      } else {
+        startOfDay = new Date(now)
+        startOfDay.setHours(0, 0, 0, 0)
+        endOfDay = new Date(now)
+        endOfDay.setHours(23, 59, 59, 999)
+      }
       // An item belongs to Today if its departure date is today (local) AND it
       // has not yet arrived. "Has not arrived" = current time is before its
       // arrival time (actual ?? estimated ?? scheduled) OR its status is not

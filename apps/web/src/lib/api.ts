@@ -43,8 +43,14 @@ export const api = {
   },
 
   flights: {
-    list: (when?: string) =>
-      request<Flight[]>(`/flights${when ? `?when=${when}` : ''}`),
+    list: (when?: string) => {
+      if (!when) return request<Flight[]>('/flights')
+      // Send the client's local date and UTC-offset so the server can compute
+      // correct day boundaries regardless of the server's own timezone.
+      const localDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
+      const tzOffset = new Date().getTimezoneOffset() // minutes behind UTC
+      return request<Flight[]>(`/flights?when=${when}&localDate=${localDate}&tzOffset=${tzOffset}`)
+    },
     get: (id: string) =>
       request<FlightWithEvents>(`/flights/${id}`),
     lookup: (ident: string, date: string) =>
@@ -81,7 +87,12 @@ export const api = {
   },
 
   trains: {
-    list: (when?: string) => request<Train[]>(`/trains${when ? `?when=${when}` : ''}`),
+    list: (when?: string) => {
+      if (!when) return request<Train[]>('/trains')
+      const localDate = new Date().toLocaleDateString('en-CA')
+      const tzOffset = new Date().getTimezoneOffset()
+      return request<Train[]>(`/trains?when=${when}&localDate=${localDate}&tzOffset=${tzOffset}`)
+    },
     get: (id: string) => request<TrainWithEvents>(`/trains/${id}`),
     lookup: (number: string, date: string) => request<TrainPreview>(`/trains/lookup?number=${encodeURIComponent(number)}&date=${encodeURIComponent(date)}`),
     add: (data: { trainNumber: string; date: string; tripId?: string; origin?: string; destination?: string; boardingStop?: { code: string; schDep?: string } }) =>

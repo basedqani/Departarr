@@ -32,7 +32,7 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/trains
   app.get('/trains', async (req, reply) => {
     const userId = (req.user as { id: string }).id
-    const { when } = req.query as { when?: string }
+    const { when, localDate, tzOffset } = req.query as { when?: string; localDate?: string; tzOffset?: string }
     const now = new Date()
 
     let where: Record<string, unknown> = { userId }
@@ -40,10 +40,18 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
     const arrivedStatuses = ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled']
 
     if (when === 'today') {
-      const startOfDay = new Date(now)
-      startOfDay.setHours(0, 0, 0, 0)
-      const endOfDay = new Date(now)
-      endOfDay.setHours(23, 59, 59, 999)
+      let startOfDay: Date
+      let endOfDay: Date
+      if (localDate && tzOffset !== undefined) {
+        const offsetMs = parseInt(tzOffset, 10) * 60 * 1000
+        startOfDay = new Date(new Date(`${localDate}T00:00:00Z`).getTime() + offsetMs)
+        endOfDay   = new Date(new Date(`${localDate}T23:59:59.999Z`).getTime() + offsetMs)
+      } else {
+        startOfDay = new Date(now)
+        startOfDay.setHours(0, 0, 0, 0)
+        endOfDay = new Date(now)
+        endOfDay.setHours(23, 59, 59, 999)
+      }
       // Belongs to Today if it departs today (local) AND has not yet arrived.
       // "Has not arrived" = now is before arrival time (actual ?? estimated ??
       // scheduled) OR status is not arrived. Arrival time is the cutoff so an

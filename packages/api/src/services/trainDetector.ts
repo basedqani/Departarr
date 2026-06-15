@@ -155,8 +155,8 @@ export function detectTrainsInText(text: string): DetectedTrain[] {
 
   if (!hasAmtrakKeyword && !hasTrainName) return []
 
-  // Pattern 1: "Amtrak 351" or "Amtrak #351" or "Amtrak No. 351"
-  const amtrakNumRe = /\bAmtrak\s+(?:#|No\.?\s*|Number\s*)?(\d{1,4})\b/gi
+  // Pattern 1: "Amtrak 351", "Amtrak #351", "Amtrak No. 351", "Amtrak: 8 Empire Builder"
+  const amtrakNumRe = /\bAmtrak\s*:?\s*(?:#|No\.?\s*|Number\s*)?(\d{1,4})\b/gi
   let m: RegExpExecArray | null
   while ((m = amtrakNumRe.exec(text)) !== null) {
     results.push({ trainNumber: m[1], rawMatch: m[0] })

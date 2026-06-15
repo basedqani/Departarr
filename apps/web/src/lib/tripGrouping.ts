@@ -113,13 +113,16 @@ const AUTO_GROUP_MAX_GAP_MS = 8 * 60 * 60 * 1000
 
 function buildAutoItineraries(legs: TripLeg[]): { grouped: AutoItineraryItem[]; remaining: TripLeg[] } {
   const sorted = [...legs].sort((a, b) => a.sortKey - b.sortKey)
+  // `used` tracks only indices that actually became part of a multi-leg chain.
+  // A chain-start index is NOT marked used unless its chain reaches length >= 2,
+  // otherwise lone standalone legs would be excluded from both `grouped` and
+  // `remaining` and vanish from the UI entirely.
   const used = new Set<number>()
   const grouped: AutoItineraryItem[] = []
 
   for (let i = 0; i < sorted.length; i++) {
     if (used.has(i)) continue
-    const chain: TripLeg[] = [sorted[i]]
-    used.add(i)
+    const chainIdx: number[] = [i]
     let last = sorted[i]
 
     for (let j = i + 1; j < sorted.length; j++) {
@@ -131,13 +134,15 @@ function buildAutoItineraries(legs: TripLeg[]): { grouped: AutoItineraryItem[]; 
         : (last.data.arrivalActual ?? last.data.arrivalEstimated ?? last.data.arrivalScheduled)
       const gap = new Date(legDeparture(next)).getTime() - new Date(arrBest).getTime()
       if (gap >= 0 && gap <= AUTO_GROUP_MAX_GAP_MS) {
-        chain.push(next)
-        used.add(j)
+        chainIdx.push(j)
         last = next
       }
     }
 
-    if (chain.length >= 2) {
+    if (chainIdx.length >= 2) {
+      // Only now mark every member consumed, so they're excluded from remaining.
+      for (const idx of chainIdx) used.add(idx)
+      const chain = chainIdx.map(idx => sorted[idx])
       const connections: (InlineConnection | null)[] = []
       for (let k = 0; k < chain.length - 1; k++) {
         connections.push(computeConnectionBetweenLegs(chain[k], chain[k + 1]))
