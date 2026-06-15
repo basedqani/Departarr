@@ -4,7 +4,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatTime, formatDateTime } from '../lib/format'
+import { formatDateTime, formatTimeInZone, getAirportTz, getAmtrakStationTz } from '../lib/format'
 import type { AircraftPosition } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
@@ -241,16 +241,16 @@ export function SharePage(): React.ReactElement {
             <div className="info-grid" style={{ marginTop: 0 }}>
               <div className="info-cell">
                 <div className="info-cell-label">Departure</div>
-                <div className="info-cell-value">{formatTime(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled)}</div>
+                <div className="info-cell-value">{formatTimeInZone(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled, getAirportTz(flight.origin))}</div>
                 {(flight.departureEstimated || flight.departureActual) && flight.departureActual !== flight.departureScheduled && (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>{formatTime(flight.departureScheduled)}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>{formatTimeInZone(flight.departureScheduled, getAirportTz(flight.origin))}</div>
                 )}
               </div>
               <div className="info-cell">
                 <div className="info-cell-label">Arrival</div>
-                <div className="info-cell-value">{formatTime(flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled)}</div>
+                <div className="info-cell-value">{formatTimeInZone(flight.arrivalActual ?? flight.arrivalEstimated ?? flight.arrivalScheduled, getAirportTz(flight.destination))}</div>
                 {(flight.arrivalEstimated || flight.arrivalActual) && flight.arrivalActual !== flight.arrivalScheduled && (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>{formatTime(flight.arrivalScheduled)}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>{formatTimeInZone(flight.arrivalScheduled, getAirportTz(flight.destination))}</div>
                 )}
               </div>
               {flight.gateDeparture && (
@@ -308,14 +308,14 @@ export function SharePage(): React.ReactElement {
               <div className="info-cell">
                 <div className="info-cell-label">Departs</div>
                 <div className="info-cell-value">
-                  {new Date(train.departureActual ?? train.departureEstimated ?? train.departureScheduled).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {formatTimeInZone(train.departureActual ?? train.departureEstimated ?? train.departureScheduled, getAmtrakStationTz(train.origin))}
                 </div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{train.originName ?? train.origin}</div>
               </div>
               <div className="info-cell">
                 <div className="info-cell-label">Arrives</div>
                 <div className="info-cell-value">
-                  {new Date(train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {formatTimeInZone(train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled, getAmtrakStationTz(train.destination))}
                 </div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{train.destinationName ?? train.destination}</div>
               </div>

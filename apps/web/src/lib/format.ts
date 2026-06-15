@@ -1,3 +1,53 @@
+// ─── Amtrak station → IANA timezone ─────────────────────────────────────────
+const AMTRAK_TZ: Record<string, string> = {
+  // Eastern
+  NYP: 'America/New_York', WAS: 'America/New_York', PHL: 'America/New_York',
+  BAL: 'America/New_York', NWK: 'America/New_York', BOS: 'America/New_York',
+  BBY: 'America/New_York', PVD: 'America/New_York', NHV: 'America/New_York',
+  NLC: 'America/New_York', MYS: 'America/New_York', KGN: 'America/New_York',
+  RTE: 'America/New_York', TRE: 'America/New_York', MPD: 'America/New_York',
+  WIL: 'America/New_York', ABE: 'America/New_York', ALB: 'America/New_York',
+  HAR: 'America/New_York', LAN: 'America/New_York', SPG: 'America/New_York',
+  CVS: 'America/New_York', RVR: 'America/New_York', LYH: 'America/New_York',
+  RGH: 'America/New_York', GBO: 'America/New_York', HAM: 'America/New_York',
+  SAB: 'America/New_York', CLT: 'America/New_York', BUF: 'America/New_York',
+  ROC: 'America/New_York', SYR: 'America/New_York', UCA: 'America/New_York',
+  SAR: 'America/New_York', PIT: 'America/New_York', CIN: 'America/New_York',
+  DET: 'America/New_York', ANN: 'America/New_York', KAL: 'America/New_York',
+  BTL: 'America/New_York', ETG: 'America/New_York', FLN: 'America/New_York',
+  JAC: 'America/New_York', SAV: 'America/New_York', FLO: 'America/New_York',
+  MIA: 'America/New_York', TPA: 'America/New_York',
+  // Central
+  CHI: 'America/Chicago', MCI: 'America/Chicago', STL: 'America/Chicago',
+  CHM: 'America/Chicago', MSD: 'America/Chicago', WNO: 'America/Chicago',
+  LCR: 'America/Chicago', TOM: 'America/Chicago', MKE: 'America/Chicago',
+  NOL: 'America/Chicago', JAX: 'America/Chicago', SPI: 'America/Chicago',
+  OKC: 'America/Chicago', TOP: 'America/Chicago', LNK: 'America/Chicago',
+  OMA: 'America/Chicago', AUS: 'America/Chicago', SAT: 'America/Chicago',
+  FTW: 'America/Chicago', DAL: 'America/Chicago',
+  // Mountain
+  DEN: 'America/Denver', GJT: 'America/Denver', GLW: 'America/Denver',
+  SLC: 'America/Denver', OGD: 'America/Denver', ELP: 'America/Denver',
+  // Pacific
+  SEA: 'America/Los_Angeles', TAC: 'America/Los_Angeles', OLY: 'America/Los_Angeles',
+  CTB: 'America/Los_Angeles', KEL: 'America/Los_Angeles', VAN: 'America/Los_Angeles',
+  PDX: 'America/Los_Angeles', SAL: 'America/Los_Angeles', ALY: 'America/Los_Angeles',
+  EUG: 'America/Los_Angeles', KFH: 'America/Los_Angeles', DUN: 'America/Los_Angeles',
+  RDD: 'America/Los_Angeles', CKS: 'America/Los_Angeles', EMY: 'America/Los_Angeles',
+  SAC: 'America/Los_Angeles', DAV: 'America/Los_Angeles', MTZ: 'America/Los_Angeles',
+  SNJ: 'America/Los_Angeles', SLO: 'America/Los_Angeles', SBA: 'America/Los_Angeles',
+  OXN: 'America/Los_Angeles', LAX: 'America/Los_Angeles', FUL: 'America/Los_Angeles',
+  ANA: 'America/Los_Angeles', SNA: 'America/Los_Angeles', OSD: 'America/Los_Angeles',
+  SAN: 'America/Los_Angeles', RNO: 'America/Los_Angeles', SPK: 'America/Los_Angeles',
+  // Nevada
+  EMY2: 'America/Los_Angeles',
+}
+
+export function getAmtrakStationTz(code: string): string {
+  return AMTRAK_TZ[code.toUpperCase()] ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+}
+
+// ─── Airport → IANA timezone ──────────────────────────────────────────────────
 const AIRPORT_TZ: Record<string, string> = {
   // USA — Eastern
   ATL: 'America/New_York', JFK: 'America/New_York', LGA: 'America/New_York',
@@ -85,6 +135,32 @@ export function formatDuration(ms: number): string {
   if (hours === 0) return `${minutes}m`
   if (minutes === 0) return `${hours}h`
   return `${hours}h ${minutes}m`
+}
+
+/**
+ * Formats a UTC ISO string into a human-readable time in the given IANA timezone,
+ * including the short timezone abbreviation (e.g. "9:00 PM CDT").
+ */
+export function formatTimeInZone(
+  dateStr: string | null | undefined,
+  tz: string,
+): string {
+  if (!dateStr) return '--:--'
+  const d = new Date(dateStr)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  }).formatToParts(d)
+  const time = parts
+    .filter(p => p.type === 'hour' || p.type === 'literal' || p.type === 'minute' || p.type === 'dayPeriod')
+    .map(p => p.value)
+    .join('')
+    .trim()
+  const tzAbbr = parts.find(p => p.type === 'timeZoneName')?.value ?? ''
+  return tzAbbr ? `${time} ${tzAbbr}` : time
 }
 
 export function formatLocalTime(

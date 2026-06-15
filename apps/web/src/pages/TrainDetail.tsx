@@ -5,15 +5,14 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import type { TrainStop, WeatherResult } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatDuration, formatDate } from '../lib/format'
+import { formatDuration, formatDate, formatTimeInZone, getAmtrakStationTz } from '../lib/format'
 import { TrainMap } from '../components/TrainMap'
 import type { GtfsStop } from '../components/TrainMap'
 
-// NOTE: Amtrak stations don't have a standardised timezone map.
-// For v1, all times are displayed in the browser's local timezone.
-function fmtTime(iso: string | null | undefined): string {
+// fmtTime is used for stop timelines and events where we pass the timezone explicitly
+function fmtTime(iso: string | null | undefined, tz: string): string {
   if (!iso) return '--:--'
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return formatTimeInZone(iso, tz)
 }
 
 // ─── Weather helpers (mirrored from FlightDetail) ─────────────────────────────
@@ -250,7 +249,7 @@ function BookingCard({ trainId, seat, confirmationCode }: { trainId: string; sea
 
 // ─── Stop timeline ────────────────────────────────────────────────────────────
 
-function StopTimeline({ stops }: { stops: TrainStop[] }): React.ReactElement {
+function StopTimeline({ stops, originTz }: { stops: TrainStop[]; originTz: string }): React.ReactElement {
   return (
     <div className="card" style={{ marginBottom: '0.875rem' }}>
       <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '1rem' }}>
@@ -263,6 +262,8 @@ function StopTimeline({ stops }: { stops: TrainStop[] }): React.ReactElement {
           const schTime = stop.schDep ?? stop.schArr
           const actTime = stop.dep ?? stop.arr
           const delayComment = stop.depCmnt ?? stop.arrCmnt
+          // Each stop ideally has its own timezone; fall back to origin tz
+          const stopTz = getAmtrakStationTz(stop.code) ?? originTz
 
           let dotClass = ''
           if (passed) dotClass = ' done'
@@ -292,7 +293,7 @@ function StopTimeline({ stops }: { stops: TrainStop[] }): React.ReactElement {
                 <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: '0.5rem' }}>
                   {actTime && (
                     <div className="event-time" style={{ color: passed ? 'var(--on-time)' : 'var(--text)' }}>
-                      {fmtTime(actTime)}
+                      {fmtTime(actTime, stopTz)}
                     </div>
                   )}
                   {!actTime && schTime && (
@@ -354,8 +355,10 @@ export function TrainDetailPage(): React.ReactElement {
     catch { return [] }
   })()
 
-  const depTime = fmtTime(train.departureActual ?? train.departureEstimated ?? train.departureScheduled)
-  const arrTime = fmtTime(train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled)
+  const originTz = getAmtrakStationTz(train.origin)
+  const destTz = getAmtrakStationTz(train.destination)
+  const depTime = fmtTime(train.departureActual ?? train.departureEstimated ?? train.departureScheduled, originTz)
+  const arrTime = fmtTime(train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled, destTz)
   const durationMs = new Date(train.arrivalScheduled).getTime() - new Date(train.departureScheduled).getTime()
 
   async function handleDelete(): Promise<void> {
@@ -377,8 +380,8 @@ export function TrainDetailPage(): React.ReactElement {
   const formatEventLabel = (eventType: string, oldValue: string | null, newValue: string | null): string => {
     switch (eventType) {
       case 'delay': {
-        const oldT = oldValue ? fmtTime(oldValue) : null
-        const newT = newValue ? fmtTime(newValue) : null
+        const oldT = oldValue ? fmtTime(oldValue, originTz) : null
+        const newT = newValue ? fmtTime(newValue, originTz) : null
         if (oldT && newT) return `Departure delayed: ${oldT} → ${newT}`
         if (newT) return `Departure updated to ${newT}`
         return 'Departure time changed'
@@ -505,7 +508,7 @@ export function TrainDetailPage(): React.ReactElement {
         )}
 
         {/* Stop timeline */}
-        {stops.length > 0 && <StopTimeline stops={stops} />}
+        {stops.length > 0 && <StopTimeline stops={stops} originTz={originTz} />}
 
         {/* Weather at destination */}
         {weather && <WeatherSection weather={weather} />}
@@ -529,7 +532,7 @@ export function TrainDetailPage(): React.ReactElement {
                 }}>
                   <span style={{ fontSize: '0.875rem', lineHeight: 1.4 }}>{label}</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', flexShrink: 0, paddingTop: '0.1rem' }}>
-                    {fmtTime(ev.occurredAt)}
+                    {fmtTime(ev.occurredAt, originTz)}
                   </span>
                 </div>
               )

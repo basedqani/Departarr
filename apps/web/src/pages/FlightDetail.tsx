@@ -4,7 +4,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatTime, formatDuration, formatLocalTime, formatTzShift, getAirportTz } from '../lib/format'
+import { formatDuration, formatLocalTime, formatTzShift, getAirportTz } from '../lib/format'
 import type { AircraftPosition, Flight, FlightWithEvents, WeatherResult } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
@@ -348,7 +348,7 @@ function ConnectionCard({ flight }: { flight: FlightWithEvents }): React.ReactEl
                 <div style={{ color: 'var(--on-time)' }}>Inbound on time</div>
               )}
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                {conn.outboundFlight.ident} departs {formatTime(conn.outboundFlight.departureEstimated ?? conn.outboundFlight.departureScheduled)}
+                {conn.outboundFlight.ident} departs {fmtTime(conn.outboundFlight.departureEstimated ?? conn.outboundFlight.departureScheduled, conn.outboundFlight.origin)}
               </div>
             </div>
           </div>
@@ -639,6 +639,8 @@ function AircraftPhotoCard({ flightId }: { flightId: string }): React.ReactEleme
 
 function OooiTimeline({ flight }: { flight: FlightWithEvents }): React.ReactElement {
   const currentIdx = getOooiStepIndex(flight.status, flight)
+  const originTz = getAirportTz(flight.origin)
+  const destTz = getAirportTz(flight.destination)
 
   return (
     <div className="card" style={{ marginBottom: '0.875rem' }}>
@@ -649,9 +651,11 @@ function OooiTimeline({ flight }: { flight: FlightWithEvents }): React.ReactElem
         {OOOI_STEPS.map((step, i) => {
           const done = i < currentIdx
           const active = i === currentIdx
-          const timeStr = step.timeField
-            ? formatTime(flight[step.timeField] as string | null)
-            : null
+          // departure/takeoff events use origin tz; landing/arrival use destination tz
+          const isArrivalEvent = step.key === 'touched-down' || step.key === 'at-gate'
+          const stepTz = isArrivalEvent ? destTz : originTz
+          const rawTime = step.timeField ? (flight[step.timeField] as string | null) : null
+          const timeStr = rawTime ? formatLocalTime(rawTime, stepTz) : null
           const showTime = done && timeStr && timeStr !== '--:--'
 
           return (
@@ -1234,7 +1238,7 @@ export function FlightDetailPage(): React.ReactElement {
                 }}>
                   <span style={{ fontSize: '0.875rem', lineHeight: 1.4 }}>{label}</span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', flexShrink: 0, paddingTop: '0.1rem' }}>
-                    {formatTime(ev.occurredAt)}
+                    {fmtTime(ev.occurredAt, flight.origin)}
                   </span>
                 </div>
               )

@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import type { Train } from '../lib/api'
 import { StatusBadge } from './StatusBadge'
-import { formatDate } from '../lib/format'
+import { formatDate, formatTimeInZone, getAmtrakStationTz } from '../lib/format'
 
 interface Props {
   train: Train
@@ -10,12 +10,6 @@ interface Props {
   index?: number
 }
 
-// NOTE: Amtrak stations don't have a standardised timezone map equivalent to
-// getAirportTz(). For v1 we display times in the browser's local timezone.
-// A proper station→timezone map should be added in a future iteration.
-function formatLocalTimeBrowser(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
 
 function delayMinutes(scheduled: string | null | undefined, updated: string | null | undefined): number {
   if (!scheduled || !updated) return 0
@@ -48,11 +42,15 @@ function RouteArrow(): React.ReactElement {
 }
 
 export function TrainCard({ train, showDate, index = 0 }: Props): React.ReactElement {
-  const depTime = formatLocalTimeBrowser(
-    train.departureActual ?? train.departureEstimated ?? train.departureScheduled
+  const originTz = getAmtrakStationTz(train.origin)
+  const destTz = getAmtrakStationTz(train.destination)
+  const depTime = formatTimeInZone(
+    train.departureActual ?? train.departureEstimated ?? train.departureScheduled,
+    originTz
   )
-  const arrTime = formatLocalTimeBrowser(
-    train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled
+  const arrTime = formatTimeInZone(
+    train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled,
+    destTz
   )
   const depDelay = delayMinutes(train.departureScheduled, train.departureActual ?? train.departureEstimated)
   const arrDelay = delayMinutes(train.arrivalScheduled, train.arrivalActual ?? train.arrivalEstimated)
