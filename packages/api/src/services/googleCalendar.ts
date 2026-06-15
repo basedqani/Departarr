@@ -259,44 +259,42 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
 
               // The event's startDateTime is the most reliable signal for which stop
               // the user boards at — it comes directly from the Amtrak booking.
-              // Primary method: match the event's local clock time against each stop's
-              // GTFS departure time. GTFS times are stored as local clock times, so a
-              // stop at 9:00 PM Central and a calendar event at "T21:00:00-05:00" both
-              // read "21:00" — regardless of the server timezone.
+              // Compare the event's UTC timestamp against each stop's UTC time, derived
+              // by adding the stop's GTFS offset from the origin departure time.
+              // This avoids % 24 aliasing bugs with overnight GTFS times (e.g. "47:00:00").
               const eventStartDateTime = (start as { date?: string; dateTime?: string }).dateTime
               if (eventStartDateTime) {
                 departureScheduled = new Date(eventStartDateTime)
 
-                // Extract HH:MM from the ISO local-time portion (before the tz offset)
-                const localMatch = eventStartDateTime.match(/T(\d{2}):(\d{2})/)
-                if (localMatch) {
-                  const eventLocalMin = parseInt(localMatch[1]) * 60 + parseInt(localMatch[2])
+                const parseGtfsMs = (t: string): number => {
+                  const parts = t.split(':').map(Number)
+                  return ((parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0)) * 1000
+                }
 
-                  let bestStop = schedule.stops[0]
-                  let bestDiff = Infinity
-                  for (const stop of schedule.stops) {
-                    const timeStr = stop.scheduledDep ?? stop.scheduledArr
-                    if (!timeStr) continue
-                    const parts = timeStr.split(':').map(Number)
-                    // Normalize GTFS time to 0–1439 (overnight trains use >24h)
-                    const stopLocalMin = ((parts[0] ?? 0) % 24) * 60 + (parts[1] ?? 0)
-                    // Circular diff to handle midnight wraparound
-                    const diff = Math.min(
-                      Math.abs(stopLocalMin - eventLocalMin),
-                      1440 - Math.abs(stopLocalMin - eventLocalMin)
-                    )
-                    if (diff < bestDiff) {
-                      bestDiff = diff
-                      bestStop = stop
-                    }
-                  }
+                const eventMs = new Date(eventStartDateTime).getTime()
+                const scheduleOriginMs = schedule.departureScheduled.getTime()
+                const originStop = schedule.stops[0]
+                const originGtfsMs = parseGtfsMs(originStop.scheduledDep ?? originStop.scheduledArr ?? '0:0:0')
 
-                  // Accept the time-based match if within 90 min and not already the route origin
-                  if (bestDiff <= 90 && bestStop.code !== schedule.origin) {
-                    origin = bestStop.code
-                    originName = bestStop.name
-                    console.log(`[calendar] Train ${detected.trainNumber}: time-based boarding → ${origin} (${originName}), event local ${localMatch[1]}:${localMatch[2]}, stop ${bestStop.scheduledDep}, diff ${bestDiff}min`)
+                let bestStop = schedule.stops[0]
+                let bestDiff = Infinity
+                for (const stop of schedule.stops) {
+                  const timeStr = stop.scheduledDep ?? stop.scheduledArr
+                  if (!timeStr) continue
+                  // Compute this stop's UTC time: origin UTC + (stop GTFS offset - origin GTFS offset)
+                  const stopUtcMs = scheduleOriginMs + (parseGtfsMs(timeStr) - originGtfsMs)
+                  const diff = Math.abs(stopUtcMs - eventMs)
+                  if (diff < bestDiff) {
+                    bestDiff = diff
+                    bestStop = stop
                   }
+                }
+
+                // Accept the time-based match if within 90 min and not already the route origin
+                if (bestDiff <= 90 * 60 * 1000 && bestStop.code !== schedule.origin) {
+                  origin = bestStop.code
+                  originName = bestStop.name
+                  console.log(`[calendar] Train ${detected.trainNumber}: time-based boarding → ${origin} (${originName}), diff ${Math.round(bestDiff / 60000)}min`)
                 }
               }
 
@@ -310,13 +308,13 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                   origin = boardingStop.code
                   originName = boardingStop.name
                   if (boardingStop.scheduledDep) {
-                    const parseGtfsMs = (t: string): number => {
+                    const parseGtfsMs2 = (t: string): number => {
                       const parts = t.split(':').map(Number)
                       return ((parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0)) * 1000
                     }
                     const originStop = schedule.stops[0]
-                    const originMs = parseGtfsMs(originStop.scheduledDep ?? originStop.scheduledArr ?? '0:0:0')
-                    const boardingMs = parseGtfsMs(boardingStop.scheduledDep)
+                    const originMs = parseGtfsMs2(originStop.scheduledDep ?? originStop.scheduledArr ?? '0:0:0')
+                    const boardingMs = parseGtfsMs2(boardingStop.scheduledDep)
                     departureScheduled = new Date(schedule.departureScheduled.getTime() + (boardingMs - originMs))
                   }
                   console.log(`[calendar] Train ${detected.trainNumber}: text-based boarding → ${origin} (${originName})`)

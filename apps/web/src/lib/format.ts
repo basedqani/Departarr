@@ -19,12 +19,12 @@ const AMTRAK_TZ: Record<string, string> = {
   MIA: 'America/New_York', TPA: 'America/New_York',
   // Central
   CHI: 'America/Chicago', MCI: 'America/Chicago', STL: 'America/Chicago',
-  CHM: 'America/Chicago', MSD: 'America/Chicago', WNO: 'America/Chicago',
-  LCR: 'America/Chicago', TOM: 'America/Chicago', MKE: 'America/Chicago',
-  NOL: 'America/Chicago', JAX: 'America/Chicago', SPI: 'America/Chicago',
-  OKC: 'America/Chicago', TOP: 'America/Chicago', LNK: 'America/Chicago',
-  OMA: 'America/Chicago', AUS: 'America/Chicago', SAT: 'America/Chicago',
-  FTW: 'America/Chicago', DAL: 'America/Chicago',
+  CHM: 'America/Chicago', MSD: 'America/Chicago', STP: 'America/Chicago',
+  WNO: 'America/Chicago', LCR: 'America/Chicago', TOM: 'America/Chicago',
+  MKE: 'America/Chicago', NOL: 'America/Chicago', JAX: 'America/Chicago',
+  SPI: 'America/Chicago', OKC: 'America/Chicago', TOP: 'America/Chicago',
+  LNK: 'America/Chicago', OMA: 'America/Chicago', AUS: 'America/Chicago',
+  SAT: 'America/Chicago', FTW: 'America/Chicago', DAL: 'America/Chicago',
   // Mountain
   DEN: 'America/Denver', GJT: 'America/Denver', GLW: 'America/Denver',
   SLC: 'America/Denver', OGD: 'America/Denver', ELP: 'America/Denver',

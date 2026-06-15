@@ -17,6 +17,7 @@ import { tmpdir } from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { readFile } from 'fs/promises'
+import { getAmtrakStationTzBackend } from '../data/amtrakStations.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -200,12 +201,39 @@ async function ensureGtfsFresh(): Promise<void> {
 
 /**
  * Parse a GTFS date string (YYYYMMDD) to a JS Date (midnight UTC).
+ * Used only for calendar range comparisons (not for stop time arithmetic).
  */
 function parseGtfsDate(s: string): Date {
   const year = parseInt(s.substring(0, 4), 10)
   const month = parseInt(s.substring(4, 6), 10) - 1
   const day = parseInt(s.substring(6, 8), 10)
   return new Date(Date.UTC(year, month, day))
+}
+
+/**
+ * Returns the UTC timestamp of midnight (00:00:00) in the given IANA timezone
+ * on the given YYYY-MM-DD date. This is the correct base for GTFS time arithmetic
+ * because GTFS times are local clock times at the origin station, not UTC offsets.
+ *
+ * Technique: format noon UTC in the target timezone to get the local clock reading,
+ * then subtract those hours/minutes/seconds to find the UTC moment of local midnight.
+ */
+function localMidnightUtc(dateStr: string, tz: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  // Use noon UTC as reference — safely within the same calendar day in any timezone
+  const noonUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(noonUtc)
+  const h = parseInt(parts.find(p => p.type === 'hour')?.value ?? '12')
+  const m = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0')
+  const sec = parseInt(parts.find(p => p.type === 'second')?.value ?? '0')
+  // noonUtc minus (local clock reading of noon) gives local midnight in UTC
+  return new Date(noonUtc.getTime() - (h * 3600 + m * 60 + sec) * 1000)
 }
 
 /**
@@ -229,12 +257,13 @@ function parseGtfsTime(s: string): number {
 }
 
 /**
- * Given a base date (midnight UTC on the service date) and a GTFS time string
- * (which may exceed 24:00:00), returns the actual UTC datetime.
+ * Given a base date (local midnight in the origin station's timezone) and a GTFS
+ * time string (which may exceed 24:00:00 for overnight trains), returns the actual
+ * UTC datetime.
  */
-function gtfsTimeToDate(baseMidnightUtc: Date, timeStr: string): Date {
+function gtfsTimeToDate(baseMidnightLocal: Date, timeStr: string): Date {
   const msFromMidnight = parseGtfsTime(timeStr)
-  return new Date(baseMidnightUtc.getTime() + msFromMidnight)
+  return new Date(baseMidnightLocal.getTime() + msFromMidnight)
 }
 
 // ── Main export ───────────────────────────────────────────────────────────
@@ -253,7 +282,6 @@ export async function lookupTrainSchedule(
   try {
     // Parse date
     const dateCompact = date.replace(/-/g, '') // YYYYMMDD
-    const baseMidnightUtc = parseGtfsDate(dateCompact)
     const dateObj = new Date(date + 'T00:00:00Z')
 
     // 1. Find route(s) by trip_short_name = trainNumber
@@ -331,8 +359,14 @@ export async function lookupTrainSchedule(
     const originInfo = stopMap.get(origin)
     const destInfo = stopMap.get(destination)
 
-    const departureScheduled = gtfsTimeToDate(baseMidnightUtc, firstStop.departure_time || firstStop.arrival_time)
-    const arrivalScheduled = gtfsTimeToDate(baseMidnightUtc, lastStop.arrival_time || lastStop.departure_time)
+    // Use the origin station's local timezone as the base for GTFS time arithmetic.
+    // GTFS times are local clock times, not UTC offsets — e.g. Empire Builder departs
+    // Seattle at 06:10 PST, stored as "06:10:00". Using UTC midnight would be off by 8h.
+    const originTz = getAmtrakStationTzBackend(origin)
+    const baseMidnightLocal = localMidnightUtc(date, originTz)
+
+    const departureScheduled = gtfsTimeToDate(baseMidnightLocal, firstStop.departure_time || firstStop.arrival_time)
+    const arrivalScheduled = gtfsTimeToDate(baseMidnightLocal, lastStop.arrival_time || lastStop.departure_time)
 
     const stops: GtfsStop[] = tripStopTimes.map(st => {
       const info = stopMap.get(st.stop_id)
