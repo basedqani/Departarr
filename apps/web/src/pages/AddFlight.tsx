@@ -386,7 +386,7 @@ export function AddFlightPage(): React.ReactElement {
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
-                      Alighting at
+                      Arriving at
                     </label>
                     <select
                       value={alightingStopCode}
