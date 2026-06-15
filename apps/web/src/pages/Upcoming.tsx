@@ -239,15 +239,86 @@ export function UpcomingPage(): React.ReactElement {
 
   const displayItems = buildDisplayItems(flights ?? [], trains)
 
-  // Group display items by date
-  const dateGroups = new Map<string, DisplayItem[]>()
-  for (const item of displayItems) {
-    const key = getItemDateKey(item)
-    if (!dateGroups.has(key)) dateGroups.set(key, [])
-    dateGroups.get(key)!.push(item)
+  // Split into manual-trip items (shown grouped under the Trips section as
+  // date-grouped cards) and standalone items (not assigned to any trip), which
+  // get their own clearly-labeled "Not in a trip" section below.
+  const tripItems = displayItems.filter(i => i.type === 'trip')
+  const standaloneDisplayItems = displayItems.filter(i => i.type !== 'trip')
+
+  function groupByDate(list: DisplayItem[]): Map<string, DisplayItem[]> {
+    const groups = new Map<string, DisplayItem[]>()
+    for (const item of list) {
+      const key = getItemDateKey(item)
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(item)
+    }
+    return groups
   }
 
+  const tripDateGroups = groupByDate(tripItems)
+  const standaloneDateGroups = groupByDate(standaloneDisplayItems)
+
   let globalIndex = 0
+
+  function renderItem(item: DisplayItem): React.ReactElement {
+    if (item.type === 'trip') {
+      const idx = globalIndex
+      globalIndex += item.legs.length
+      return (
+        <div key={item.tripId}>
+          <TripCard group={item} index={idx} />
+          {item.connections.map((conn, ci) =>
+            conn ? <InlineConnectionBadge key={ci} conn={conn} /> : null
+          )}
+        </div>
+      )
+    }
+    if (item.type === 'auto-itinerary') {
+      const legIds = item.legs.map(l => l.data.id).join('-')
+      return (
+        <div key={legIds} style={{ borderLeft: '2px solid var(--accent)', paddingLeft: '0.1rem', marginBottom: '0.5rem', opacity: 0.97 }}>
+          {item.legs.map((leg, i) => (
+            <div key={leg.data.id}>
+              {leg.legType === 'flight'
+                ? <FlightCard flight={leg.data} index={globalIndex++} />
+                : <TrainCard train={leg.data} index={globalIndex++} />}
+              {i < item.legs.length - 1 && item.connections[i] && (
+                <InlineConnectionBadge conn={item.connections[i]!} showGreen />
+              )}
+            </div>
+          ))}
+        </div>
+      )
+    }
+    if (item.type === 'standalone-train') {
+      const idx = globalIndex++
+      return <TrainCard key={item.train.id} train={item.train} index={idx} />
+    }
+    const f = item.flight
+    const conn = connections?.find(c => c.flightId === f.id)
+    const idx = globalIndex++
+    return (
+      <div key={f.id}>
+        <FlightCard flight={f} index={idx} />
+        {conn && conn.risk !== 'green' && <ConnectionBadge conn={conn} />}
+      </div>
+    )
+  }
+
+  function renderDateGroups(groups: Map<string, DisplayItem[]>): React.ReactElement[] {
+    return ([...groups.entries()] as [string, DisplayItem[]][]).map(([dateKey, items]) => {
+      const firstDeparture = getItemFirstDeparture(items[0])
+      return (
+        <div key={dateKey} style={{ marginBottom: '0.5rem' }}>
+          <div className="date-group-header">
+            {formatDate(dateKey)}
+            <span className="countdown-chip">{countdownLabel(firstDeparture)}</span>
+          </div>
+          {items.map(renderItem)}
+        </div>
+      )
+    })
+  }
 
   return (
     <>
@@ -320,62 +391,15 @@ export function UpcomingPage(): React.ReactElement {
         </div>
       )}
 
-      {([...dateGroups.entries()] as [string, DisplayItem[]][]).map(
-        ([dateKey, items]) => {
-          const firstDeparture = getItemFirstDeparture(items[0])
-          return (
-            <div key={dateKey} style={{ marginBottom: '0.5rem' }}>
-              <div className="date-group-header">
-                {formatDate(dateKey)}
-                <span className="countdown-chip">{countdownLabel(firstDeparture)}</span>
-              </div>
-              {items.map(item => {
-                if (item.type === 'trip') {
-                  const idx = globalIndex
-                  globalIndex += item.legs.length
-                  return (
-                    <div key={item.tripId}>
-                      <TripCard group={item} index={idx} />
-                      {item.connections.map((conn, ci) =>
-                        conn ? <InlineConnectionBadge key={ci} conn={conn} /> : null
-                      )}
-                    </div>
-                  )
-                }
-                if (item.type === 'auto-itinerary') {
-                  const legIds = item.legs.map(l => l.data.id).join('-')
-                  return (
-                    <div key={legIds} style={{ borderLeft: '2px solid var(--accent)', paddingLeft: '0.1rem', marginBottom: '0.5rem', opacity: 0.97 }}>
-                      {item.legs.map((leg, i) => (
-                        <div key={leg.data.id}>
-                          {leg.legType === 'flight'
-                            ? <FlightCard flight={leg.data} index={globalIndex++} />
-                            : <TrainCard train={leg.data} index={globalIndex++} />}
-                          {i < item.legs.length - 1 && item.connections[i] && (
-                            <InlineConnectionBadge conn={item.connections[i]!} showGreen />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )
-                }
-                if (item.type === 'standalone-train') {
-                  const idx = globalIndex++
-                  return <TrainCard key={item.train.id} train={item.train} index={idx} />
-                }
-                const f = item.flight
-                const conn = connections?.find(c => c.flightId === f.id)
-                const idx = globalIndex++
-                return (
-                  <div key={f.id}>
-                    <FlightCard flight={f} index={idx} />
-                    {conn && conn.risk !== 'green' && <ConnectionBadge conn={conn} />}
-                  </div>
-                )
-              })}
-            </div>
-          )
-        }
+      {/* Manual trips — date-grouped cards under the Trips section */}
+      {tripItems.length > 0 && renderDateGroups(tripDateGroups)}
+
+      {/* Standalone flights & trains not assigned to any trip */}
+      {standaloneDisplayItems.length > 0 && (
+        <div style={{ marginTop: tripItems.length > 0 ? '1.5rem' : 0 }}>
+          {tripItems.length > 0 && <div className="section-label">Not in a trip</div>}
+          {renderDateGroups(standaloneDateGroups)}
+        </div>
       )}
     </motion.div>
 
