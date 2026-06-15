@@ -4,7 +4,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatDuration, formatLocalTime, formatTzShift, getAirportTz } from '../lib/format'
+import { formatDelay, formatDuration, formatLocalTime, formatTzShift, getAirportTz } from '../lib/format'
 import type { AircraftPosition, Flight, FlightWithEvents, WeatherResult } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
@@ -141,7 +141,7 @@ function TimeColumn({ iata, label, scheduled, estimated, actual, align }: TimeCo
             letterSpacing: '0.02em',
             whiteSpace: 'nowrap',
           }}>
-            {delayMin > 0 ? `Delayed +${delayMin}m` : `Early ${delayMin}m`}
+            {delayMin > 0 ? `Delayed ${formatDelay(delayMin)}` : `Early ${formatDelay(delayMin)}`}
           </span>
         )}
       </div>
@@ -345,7 +345,7 @@ function ConnectionCard({ flight }: { flight: FlightWithEvents }): React.ReactEl
                 {conn.inboundFlight.ident} · {conn.inboundFlight.origin}–{conn.inboundFlight.destination}
               </div>
               {conn.inboundDelayMin > 5 ? (
-                <div style={{ color: 'var(--delayed)' }}>Inbound {conn.inboundDelayMin}m late</div>
+                <div style={{ color: 'var(--delayed)' }}>Inbound {formatDelay(conn.inboundDelayMin).replace('+', '')} late</div>
               ) : (
                 <div style={{ color: 'var(--on-time)' }}>Inbound on time</div>
               )}

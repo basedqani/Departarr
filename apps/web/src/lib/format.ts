@@ -128,6 +128,18 @@ export function timeAgo(dateStr: string | null | undefined): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+/** Formats a delay in minutes as "+1h 49m" (positive) or "-1h 49m" (negative). Returns "" for 0. */
+export function formatDelay(minutes: number): string {
+  if (minutes === 0) return ''
+  const sign = minutes > 0 ? '+' : '-'
+  const abs = Math.abs(minutes)
+  const h = Math.floor(abs / 60)
+  const m = abs % 60
+  if (h === 0) return `${sign}${m}m`
+  if (m === 0) return `${sign}${h}h`
+  return `${sign}${h}h ${m}m`
+}
+
 export function formatDuration(ms: number): string {
   const totalMinutes = Math.floor(ms / 60_000)
   const hours = Math.floor(totalMinutes / 60)

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import type { Flight } from '../lib/api'
 import { StatusBadge } from './StatusBadge'
 import { AirlineLogo } from './AirlineLogo'
-import { formatDate, getAirportTz, formatLocalTime } from '../lib/format'
+import { formatDate, getAirportTz, formatLocalTime, formatDelay } from '../lib/format'
 import { getAirline } from '../lib/airlines'
 import { useCountdown } from '../hooks/useCountdown'
 
@@ -35,30 +35,43 @@ interface TimeWithDelayProps {
   estimated: string | null | undefined
   actual: string | null | undefined
   airportIata: string
+  align?: 'left' | 'right'
 }
 
-function TimeWithDelay({ scheduled, estimated, actual, airportIata }: TimeWithDelayProps): React.ReactElement {
+function TimeWithDelay({ scheduled, estimated, actual, airportIata, align = 'left' }: TimeWithDelayProps): React.ReactElement {
   const best = actual ?? estimated ?? scheduled
   const tz = getAirportTz(airportIata)
   const displayTime = formatLocalTime(best, tz)
   const delay = delayMinutes(scheduled, actual ?? estimated)
+
+  const badge = delay !== 0 ? (
+    <span style={{
+      fontSize: '0.62rem',
+      fontWeight: 700,
+      padding: '0.08rem 0.35rem',
+      borderRadius: 3,
+      background: 'rgba(251,191,36,0.15)',
+      border: '1px solid rgba(251,191,36,0.4)',
+      color: '#fbbf24',
+      letterSpacing: '0.02em',
+      whiteSpace: 'nowrap',
+    }}>
+      {formatDelay(delay)}
+    </span>
+  ) : null
+
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
-      <span>{displayTime}</span>
-      {delay !== 0 && (
-        <span style={{
-          fontSize: '0.62rem',
-          fontWeight: 700,
-          padding: '0.08rem 0.35rem',
-          borderRadius: 3,
-          background: 'rgba(251,191,36,0.15)',
-          border: '1px solid rgba(251,191,36,0.4)',
-          color: '#fbbf24',
-          letterSpacing: '0.02em',
-          whiteSpace: 'nowrap',
-        }}>
-          {delay > 0 ? `+${delay}m` : `${delay}m`}
-        </span>
+    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap', justifyContent: align === 'right' ? 'flex-end' : 'flex-start' }}>
+      {align === 'right' ? (
+        <>
+          {badge}
+          <span>{displayTime}</span>
+        </>
+      ) : (
+        <>
+          <span>{displayTime}</span>
+          {badge}
+        </>
       )}
     </span>
   )
@@ -180,6 +193,7 @@ export function FlightCard({ flight, showDate, index = 0 }: Props): React.ReactE
                     estimated={flight.arrivalEstimated}
                     actual={flight.arrivalActual}
                     airportIata={flight.destination}
+                    align="right"
                   />
                 </span>
               </div>
