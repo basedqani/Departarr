@@ -73,7 +73,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
 
       const map = new Map({
         container: containerRef.current!,
-        style: 'https://tiles.openfreemap.org/styles/positron',
+        style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
         center: [0, 20],
         zoom: 1.5,
         attributionControl: false,

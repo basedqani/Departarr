@@ -108,6 +108,13 @@ export function TodayPage(): React.ReactElement {
         if (item.type === 'trip') {
           return <TripCard key={item.tripId} group={item} index={i} />
         }
+        if (item.type === 'auto-itinerary') {
+          return item.legs.map((leg, li) =>
+            leg.legType === 'flight'
+              ? <FlightCard key={leg.data.id} flight={leg.data} index={i + li} />
+              : <TrainCard key={leg.data.id} train={leg.data} index={i + li} />
+          )
+        }
         if (item.type === 'standalone-train') {
           return <TrainCard key={item.train.id} train={item.train} index={i} />
         }

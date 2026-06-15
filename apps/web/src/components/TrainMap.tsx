@@ -151,7 +151,7 @@ export function TrainMap({ stops, departureScheduled, status, origin, destinatio
 
       const map = new maplibre.Map({
         container: containerRef.current!,
-        style: 'https://tiles.openfreemap.org/styles/positron',
+        style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
         center: [stops[0].lon, stops[0].lat],
         zoom: 5,
         attributionControl: false,

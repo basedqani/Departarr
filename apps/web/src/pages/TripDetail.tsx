@@ -67,19 +67,29 @@ function computeConnection(legA: TripLegItem, legB: TripLegItem): Connection | n
 
 // ─── Connection row ───────────────────────────────────────────────────────────
 
+function fmtLayover(minutes: number): string {
+  const absMin = Math.abs(minutes)
+  const h = Math.floor(absMin / 60)
+  const m = absMin % 60
+  if (h === 0) return `${m}m`
+  if (m === 0) return `${h}h`
+  return `${h}h ${m}m`
+}
+
 function ConnectionRow({ conn }: { conn: Connection }): React.ReactElement {
   if (conn.gapOnly) {
     const absMin = Math.abs(conn.layoverMinutes)
-    const h = Math.floor(absMin / 60)
-    const m = absMin % 60
-    const label = h > 0 ? `${h}h ${m}m` : `${m}m`
+    const days = Math.floor(absMin / (60 * 24))
+    const label = days >= 1
+      ? `${days} day${days !== 1 ? 's' : ''} in ${conn.airport}`
+      : `${fmtLayover(conn.layoverMinutes)} until next leg · ${conn.airport}`
     return (
       <div
         className="trip-timeline-connection"
         style={{ background: 'rgba(138,155,176,0.08)', borderTop: '1px solid rgba(138,155,176,0.2)', borderBottom: '1px solid rgba(138,155,176,0.2)', color: 'var(--text-muted)' }}
       >
         <span style={{ height: 1, flex: 1, background: 'rgba(138,155,176,0.2)' }} />
-        <span>Gap · Next leg departs {conn.airport} in {label}</span>
+        <span>{label}</span>
         <span style={{ height: 1, flex: 1, background: 'rgba(138,155,176,0.2)' }} />
       </div>
     )
@@ -97,7 +107,7 @@ function ConnectionRow({ conn }: { conn: Connection }): React.ReactElement {
       style={{ background: p.bg, borderTop: `1px solid ${p.border}`, borderBottom: `1px solid ${p.border}`, color: p.color }}
     >
       <span style={{ height: 1, flex: 1, background: p.border }} />
-      <span>{p.icon} {conn.layoverMinutes}m layover · {conn.airport} {p.label}</span>
+      <span>{p.icon} {fmtLayover(conn.layoverMinutes)} layover · {conn.airport} {p.label}</span>
       <span style={{ height: 1, flex: 1, background: p.border }} />
     </div>
   )

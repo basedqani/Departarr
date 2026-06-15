@@ -7,7 +7,7 @@ import { FlightCard } from '../components/FlightCard'
 import { TrainCard } from '../components/TrainCard'
 import { ConnectionBadge } from '../components/ConnectionBadge'
 import { TripCard } from '../components/TripCard'
-import { buildDisplayItems, type DisplayItem, type InlineConnection } from '../lib/tripGrouping'
+import { buildDisplayItems, formatLayover, type DisplayItem, type InlineConnection } from '../lib/tripGrouping'
 import { formatDate } from '../lib/format'
 
 function daysUntil(dateStr: string): number {
@@ -27,7 +27,7 @@ function countdownLabel(dateStr: string): string {
 }
 
 function getItemDateKey(item: DisplayItem): string {
-  if (item.type === 'trip') {
+  if (item.type === 'trip' || item.type === 'auto-itinerary') {
     return item.legs[0].data.departureScheduled.substring(0, 10)
   }
   if (item.type === 'standalone-train') {
@@ -37,36 +37,38 @@ function getItemDateKey(item: DisplayItem): string {
 }
 
 function getItemFirstDeparture(item: DisplayItem): string {
-  if (item.type === 'trip') return item.legs[0].data.departureScheduled
+  if (item.type === 'trip' || item.type === 'auto-itinerary') return item.legs[0].data.departureScheduled
   if (item.type === 'standalone-train') return item.train.departureScheduled
   return item.flight.departureScheduled
 }
 
 // ─── Inline connection badge ──────────────────────────────────────────────────
 
-function InlineConnectionBadge({ conn }: { conn: InlineConnection }): React.ReactElement {
-  const color = conn.risk === 'red' ? '#e53e3e' : '#d69e2e'
-  const bg = conn.risk === 'red' ? 'rgba(229,62,62,0.10)' : 'rgba(214,158,46,0.10)'
-  const border = conn.risk === 'red' ? 'rgba(229,62,62,0.35)' : 'rgba(214,158,46,0.35)'
-  const icon = conn.risk === 'red' ? '⚠️' : '⏱'
-  const label = conn.risk === 'red' ? 'AT RISK' : 'Tight'
+function InlineConnectionBadge({ conn, showGreen = false }: { conn: InlineConnection; showGreen?: boolean }): React.ReactElement | null {
+  if (conn.risk === 'green' && !showGreen) return null
+  const palettes = {
+    red:    { bg: 'rgba(229,62,62,0.10)',  border: 'rgba(229,62,62,0.35)',  color: '#e53e3e', icon: '⚠', label: '— AT RISK' },
+    yellow: { bg: 'rgba(214,158,46,0.10)', border: 'rgba(214,158,46,0.35)', color: '#d69e2e', icon: '⏱', label: '— Tight'   },
+    green:  { bg: 'rgba(56,161,105,0.06)', border: 'rgba(56,161,105,0.20)', color: '#38a169', icon: '✓', label: ''          },
+  }
+  const p = palettes[conn.risk]
   return (
     <div style={{
       margin: '0 0 0.5rem',
-      padding: '0.45rem 0.875rem',
+      padding: '0.4rem 0.875rem',
       borderRadius: 8,
-      background: bg,
-      border: `1px solid ${border}`,
-      color,
+      background: p.bg,
+      border: `1px solid ${p.border}`,
+      color: p.color,
       fontSize: '0.78rem',
       fontWeight: 600,
       display: 'flex',
       alignItems: 'center',
       gap: '0.4rem',
     }}>
-      {icon} {conn.layoverMinutes}m connection at {conn.airport} — {label}
+      {p.icon} {formatLayover(conn.layoverMinutes)} layover · {conn.airport}{p.label ? ` ${p.label}` : ''}
       {conn.sameTerminal && (
-        <span style={{ fontSize: '0.7rem', fontWeight: 400, color, opacity: 0.75 }}>· same terminal</span>
+        <span style={{ fontSize: '0.7rem', fontWeight: 400, opacity: 0.75 }}>· same terminal</span>
       )}
     </div>
   )
@@ -335,10 +337,25 @@ export function UpcomingPage(): React.ReactElement {
                     <div key={item.tripId}>
                       <TripCard group={item} index={idx} />
                       {item.connections.map((conn, ci) =>
-                        conn && conn.risk !== 'green' ? (
-                          <InlineConnectionBadge key={ci} conn={conn} />
-                        ) : null
+                        conn ? <InlineConnectionBadge key={ci} conn={conn} /> : null
                       )}
+                    </div>
+                  )
+                }
+                if (item.type === 'auto-itinerary') {
+                  const legIds = item.legs.map(l => l.data.id).join('-')
+                  return (
+                    <div key={legIds} style={{ borderLeft: '2px solid var(--accent)', paddingLeft: '0.1rem', marginBottom: '0.5rem', opacity: 0.97 }}>
+                      {item.legs.map((leg, i) => (
+                        <div key={leg.data.id}>
+                          {leg.legType === 'flight'
+                            ? <FlightCard flight={leg.data} index={globalIndex++} />
+                            : <TrainCard train={leg.data} index={globalIndex++} />}
+                          {i < item.legs.length - 1 && item.connections[i] && (
+                            <InlineConnectionBadge conn={item.connections[i]!} showGreen />
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )
                 }

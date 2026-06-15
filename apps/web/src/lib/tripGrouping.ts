@@ -47,7 +47,25 @@ export interface StandaloneTrainItem {
 // Keep backward compat alias
 export type StandaloneItem = StandaloneFlightItem
 
-export type DisplayItem = TripGroupItem | StandaloneFlightItem | StandaloneTrainItem
+// Auto-detected connecting itinerary (no manual tripId needed)
+export interface AutoItineraryItem {
+  type: 'auto-itinerary'
+  legs: TripLeg[]
+  connections: (InlineConnection | null)[]
+  sortKey: number
+}
+
+export type DisplayItem = TripGroupItem | StandaloneFlightItem | StandaloneTrainItem | AutoItineraryItem
+
+/** Format a layover duration in minutes as "Xh Ym" */
+export function formatLayover(minutes: number): string {
+  const absMin = Math.abs(minutes)
+  const h = Math.floor(absMin / 60)
+  const m = absMin % 60
+  if (h === 0) return `${m}m`
+  if (m === 0) return `${h}h`
+  return `${h}h ${m}m`
+}
 
 // ─── Connection helpers ───────────────────────────────────────────────────────
 
@@ -85,6 +103,51 @@ function computeConnectionBetweenLegs(legA: TripLeg, legB: TripLeg): InlineConne
     airport: legDestination(legA),
     sameTerminal,
   }
+}
+
+// ─── Auto-itinerary detection ─────────────────────────────────────────────────
+
+// If a flight arrives somewhere and the next departs from the same airport
+// within this window it's a connecting itinerary, not separate trips.
+const AUTO_GROUP_MAX_GAP_MS = 8 * 60 * 60 * 1000
+
+function buildAutoItineraries(legs: TripLeg[]): { grouped: AutoItineraryItem[]; remaining: TripLeg[] } {
+  const sorted = [...legs].sort((a, b) => a.sortKey - b.sortKey)
+  const used = new Set<number>()
+  const grouped: AutoItineraryItem[] = []
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (used.has(i)) continue
+    const chain: TripLeg[] = [sorted[i]]
+    used.add(i)
+    let last = sorted[i]
+
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (used.has(j)) continue
+      const next = sorted[j]
+      if (legDestination(last) !== legOrigin(next)) continue
+      const arrBest = last.legType === 'flight'
+        ? (last.data.arrivalActual ?? last.data.arrivalEstimated ?? last.data.arrivalScheduled)
+        : (last.data.arrivalActual ?? last.data.arrivalEstimated ?? last.data.arrivalScheduled)
+      const gap = new Date(legDeparture(next)).getTime() - new Date(arrBest).getTime()
+      if (gap >= 0 && gap <= AUTO_GROUP_MAX_GAP_MS) {
+        chain.push(next)
+        used.add(j)
+        last = next
+      }
+    }
+
+    if (chain.length >= 2) {
+      const connections: (InlineConnection | null)[] = []
+      for (let k = 0; k < chain.length - 1; k++) {
+        connections.push(computeConnectionBetweenLegs(chain[k], chain[k + 1]))
+      }
+      grouped.push({ type: 'auto-itinerary', legs: chain, connections, sortKey: chain[0].sortKey })
+    }
+  }
+
+  const remaining = sorted.filter((_, idx) => !used.has(idx))
+  return { grouped, remaining }
 }
 
 // ─── Build function ───────────────────────────────────────────────────────────
@@ -126,23 +189,27 @@ export function buildDisplayItems(flights: Flight[], trains: Train[] = []): Disp
     })
   }
 
+  // Collect all standalone legs, run auto-grouping, then add the remainder individually
+  const standaloneLegs: TripLeg[] = []
   for (const f of flights) {
     if (!f.tripId || !f.trip) {
-      items.push({
-        type: 'standalone',
-        flight: f,
-        sortKey: new Date(f.departureScheduled).getTime(),
-      })
+      standaloneLegs.push({ legType: 'flight', data: f, sortKey: new Date(f.departureScheduled).getTime() })
+    }
+  }
+  for (const t of trains) {
+    if (!t.tripId || !t.trip) {
+      standaloneLegs.push({ legType: 'train', data: t, sortKey: new Date(t.departureScheduled).getTime() })
     }
   }
 
-  for (const t of trains) {
-    if (!t.tripId || !t.trip) {
-      items.push({
-        type: 'standalone-train',
-        train: t,
-        sortKey: new Date(t.departureScheduled).getTime(),
-      })
+  const { grouped: autoGroups, remaining } = buildAutoItineraries(standaloneLegs)
+  items.push(...autoGroups)
+
+  for (const leg of remaining) {
+    if (leg.legType === 'flight') {
+      items.push({ type: 'standalone', flight: leg.data, sortKey: leg.sortKey })
+    } else {
+      items.push({ type: 'standalone-train', train: leg.data, sortKey: leg.sortKey })
     }
   }
 
