@@ -365,7 +365,7 @@ export function AddFlightPage(): React.ReactElement {
                 })()}
               </div>
 
-              {/* Boarding / alighting stop pickers */}
+              {/* Boarding / arriving stop pickers */}
               {trainPreview.stops.length > 1 && (
                 <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.875rem' }}>
                   <div style={{ flex: 1 }}>
