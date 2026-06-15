@@ -1,12 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
 import { TrainCard } from '../components/TrainCard'
 import { ConnectionBadge } from '../components/ConnectionBadge'
 import { TripCard } from '../components/TripCard'
-import { buildDisplayItems, type DisplayItem } from '../lib/tripGrouping'
+import { buildDisplayItems, type DisplayItem, type InlineConnection } from '../lib/tripGrouping'
 import { formatDate } from '../lib/format'
 
 function daysUntil(dateStr: string): number {
@@ -41,7 +42,176 @@ function getItemFirstDeparture(item: DisplayItem): string {
   return item.flight.departureScheduled
 }
 
+// ─── Inline connection badge ──────────────────────────────────────────────────
+
+function InlineConnectionBadge({ conn }: { conn: InlineConnection }): React.ReactElement {
+  const color = conn.risk === 'red' ? '#e53e3e' : '#d69e2e'
+  const bg = conn.risk === 'red' ? 'rgba(229,62,62,0.10)' : 'rgba(214,158,46,0.10)'
+  const border = conn.risk === 'red' ? 'rgba(229,62,62,0.35)' : 'rgba(214,158,46,0.35)'
+  const icon = conn.risk === 'red' ? '⚠️' : '⏱'
+  const label = conn.risk === 'red' ? 'AT RISK' : 'Tight'
+  return (
+    <div style={{
+      margin: '0 0 0.5rem',
+      padding: '0.45rem 0.875rem',
+      borderRadius: 8,
+      background: bg,
+      border: `1px solid ${border}`,
+      color,
+      fontSize: '0.78rem',
+      fontWeight: 600,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.4rem',
+    }}>
+      {icon} {conn.layoverMinutes}m connection at {conn.airport} — {label}
+      {conn.sameTerminal && (
+        <span style={{ fontSize: '0.7rem', fontWeight: 400, color, opacity: 0.75 }}>· same terminal</span>
+      )}
+    </div>
+  )
+}
+
+// ─── New Trip dialog ──────────────────────────────────────────────────────────
+
+function NewTripDialog({ onClose }: { onClose: () => void }): React.ReactElement {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleCreate(): Promise<void> {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setSaving(true)
+    setError(null)
+    try {
+      await api.trips.create({
+        name: trimmed,
+        ...(startDate ? { startDate } : {}),
+        ...(endDate ? { endDate } : {}),
+      })
+      await queryClient.invalidateQueries({ queryKey: ['trips'] })
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create trip')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        background: 'rgba(0,0,0,0.5)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)' as React.CSSProperties['backdropFilter'],
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0, y: 12 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--surface)',
+          borderRadius: 16,
+          padding: '1.5rem',
+          width: 'min(90vw, 420px)',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text)' }}>New Trip</div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0.25rem', lineHeight: 1 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
+            Trip name
+          </label>
+          <input
+            autoFocus
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Tokyo 2025"
+            onKeyDown={e => { if (e.key === 'Enter') void handleCreate() }}
+            style={{ width: '100%', padding: '0.6rem 0.75rem', fontSize: '0.95rem', borderRadius: 8, boxSizing: 'border-box' }}
+          />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <div>
+            <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
+              Start date
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              style={{ width: '100%', padding: '0.55rem 0.6rem', fontSize: '0.875rem', borderRadius: 8, boxSizing: 'border-box' }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>
+              End date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              style={{ width: '100%', padding: '0.55rem 0.6rem', fontSize: '0.875rem', borderRadius: 8, boxSizing: 'border-box' }}
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ color: 'var(--cancelled)', fontSize: '0.82rem', marginBottom: '0.75rem' }}>{error}</div>
+        )}
+
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            onClick={() => void handleCreate()}
+            disabled={saving || !name.trim()}
+            style={{ flex: 1, padding: '0.75rem', fontSize: '0.9rem', fontWeight: 600, borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#000', cursor: 'pointer', opacity: (!name.trim() || saving) ? 0.5 : 1 }}
+          >
+            {saving ? 'Creating…' : 'Create'}
+          </button>
+          <button
+            className="secondary"
+            onClick={onClose}
+            style={{ flex: 1, padding: '0.75rem', fontSize: '0.9rem', borderRadius: 10 }}
+          >
+            Cancel
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export function UpcomingPage(): React.ReactElement {
+  const [newTripOpen, setNewTripOpen] = useState(false)
+
   const { data: flights, isLoading } = useQuery({
     queryKey: ['flights', 'upcoming'],
     queryFn: () => api.flights.list('upcoming'),
@@ -78,6 +248,7 @@ export function UpcomingPage(): React.ReactElement {
   let globalIndex = 0
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -94,30 +265,51 @@ export function UpcomingPage(): React.ReactElement {
         </div>
       )}
 
-      {trips && trips.length > 0 && (
-        <div style={{ marginBottom: '1.5rem' }}>
-          <div className="section-label">Trips</div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {trips.map(t => (
-              <Link key={t.id} to={`/trips/${t.id}`} className="trip-chip">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 8h1a4 4 0 0 1 0 8h-1" />
-                  <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z" />
-                  <line x1="6" y1="2" x2="6" y2="4" />
-                  <line x1="10" y1="2" x2="10" y2="4" />
-                  <line x1="14" y1="2" x2="14" y2="4" />
-                </svg>
-                {t.name}
-                {t.startDate && (
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.78rem' }}>
-                    {formatDate(t.startDate)}
-                  </span>
-                )}
-              </Link>
-            ))}
-          </div>
+      {/* Trips section */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <div className="section-label">Trips</div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {trips && trips.map(t => (
+            <Link key={t.id} to={`/trips/${t.id}`} className="trip-chip">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 8h1a4 4 0 0 1 0 8h-1" />
+                <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z" />
+                <line x1="6" y1="2" x2="6" y2="4" />
+                <line x1="10" y1="2" x2="10" y2="4" />
+                <line x1="14" y1="2" x2="14" y2="4" />
+              </svg>
+              {t.name}
+              {t.startDate && (
+                <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.78rem' }}>
+                  {formatDate(t.startDate)}
+                </span>
+              )}
+            </Link>
+          ))}
+          <button
+            onClick={() => setNewTripOpen(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.3rem',
+              padding: '0.3rem 0.75rem',
+              borderRadius: 99,
+              border: '1px dashed var(--hairline)',
+              background: 'transparent',
+              color: 'var(--accent)',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            New Trip
+          </button>
         </div>
-      )}
+      </div>
 
       {flights && flights.length === 0 && trains.length === 0 && !isLoading && (
         <div className="empty">
@@ -139,7 +331,16 @@ export function UpcomingPage(): React.ReactElement {
                 if (item.type === 'trip') {
                   const idx = globalIndex
                   globalIndex += item.legs.length
-                  return <TripCard key={item.tripId} group={item} index={idx} />
+                  return (
+                    <div key={item.tripId}>
+                      <TripCard group={item} index={idx} />
+                      {item.connections.map((conn, ci) =>
+                        conn && conn.risk !== 'green' ? (
+                          <InlineConnectionBadge key={ci} conn={conn} />
+                        ) : null
+                      )}
+                    </div>
+                  )
                 }
                 if (item.type === 'standalone-train') {
                   const idx = globalIndex++
@@ -160,5 +361,10 @@ export function UpcomingPage(): React.ReactElement {
         }
       )}
     </motion.div>
+
+    <AnimatePresence>
+      {newTripOpen && <NewTripDialog onClose={() => setNewTripOpen(false)} />}
+    </AnimatePresence>
+    </>
   )
 }

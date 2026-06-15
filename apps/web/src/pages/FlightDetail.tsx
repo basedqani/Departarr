@@ -8,6 +8,7 @@ import { formatDuration, formatLocalTime, formatTzShift, getAirportTz } from '..
 import type { AircraftPosition, Flight, FlightWithEvents, WeatherResult } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
+import { AddToTripDialog } from '../components/AddToTripDialog'
 
 const GlobeMap = lazy(() => import('../components/GlobeMap').then(m => ({ default: m.GlobeMap })))
 
@@ -840,6 +841,7 @@ export function FlightDetailPage(): React.ReactElement {
   const queryClient = useQueryClient()
   const [shareSheet, setShareSheet] = useState<{ url: string } | null>(null)
   const [sharing, setSharing] = useState(false)
+  const [addToTripOpen, setAddToTripOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [position, setPosition] = useState<AircraftPosition | null>(null)
@@ -1054,6 +1056,9 @@ export function FlightDetailPage(): React.ReactElement {
               </>
             ) : (
               <>
+                <button className="secondary" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => setAddToTripOpen(true)}>
+                  Trip
+                </button>
                 <button className="secondary" style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }} onClick={() => void handleShare()} disabled={sharing}>
                   {sharing ? 'Sharing…' : 'Share'}
                 </button>
@@ -1255,6 +1260,16 @@ export function FlightDetailPage(): React.ReactElement {
           flightId={id!}
           flightIdent={flight.ident}
           onClose={() => setShareSheet(null)}
+        />
+      )}
+    </AnimatePresence>
+    <AnimatePresence>
+      {addToTripOpen && (
+        <AddToTripDialog
+          itemId={id!}
+          itemType="flight"
+          currentTripId={flight.tripId}
+          onClose={() => setAddToTripOpen(false)}
         />
       )}
     </AnimatePresence>

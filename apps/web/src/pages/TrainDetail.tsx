@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { formatDuration, formatDate, formatTimeInZone, getAmtrakStationTz } from '../lib/format'
 import { TrainMap } from '../components/TrainMap'
 import type { GtfsStop } from '../components/TrainMap'
+import { AddToTripDialog } from '../components/AddToTripDialog'
 
 // fmtTime is used for stop timelines and events where we pass the timezone explicitly
 function fmtTime(iso: string | null | undefined, tz: string): string {
@@ -321,6 +322,7 @@ export function TrainDetailPage(): React.ReactElement {
   const [deleting, setDeleting] = useState(false)
   const [shareSheet, setShareSheet] = useState<{ url: string } | null>(null)
   const [sharing, setSharing] = useState(false)
+  const [addToTripOpen, setAddToTripOpen] = useState(false)
 
   const { data: train, isLoading } = useQuery({
     queryKey: ['train', id],
@@ -430,6 +432,15 @@ export function TrainDetailPage(): React.ReactElement {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+            {!confirmDelete && (
+              <button
+                className="secondary"
+                style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem' }}
+                onClick={() => setAddToTripOpen(true)}
+              >
+                Trip
+              </button>
+            )}
             {!confirmDelete && (
               <button
                 className="secondary"
@@ -549,6 +560,16 @@ export function TrainDetailPage(): React.ReactElement {
           trainId={id!}
           trainLabel={`Train ${train.trainNumber}${train.trainName ? ` · ${train.trainName}` : ''}`}
           onClose={() => setShareSheet(null)}
+        />
+      )}
+    </AnimatePresence>
+    <AnimatePresence>
+      {addToTripOpen && (
+        <AddToTripDialog
+          itemId={id!}
+          itemType="train"
+          currentTripId={train.tripId}
+          onClose={() => setAddToTripOpen(false)}
         />
       )}
     </AnimatePresence>
