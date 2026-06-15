@@ -163,8 +163,18 @@ export function TrainMap({ stops, departureScheduled, status, origin, destinatio
       map.on('load', () => {
         if (cancelled) return
 
+        // ── Clip stops to the user's segment ─────────────────────────────────
+        // All stops from the full route are stored, but we only draw and frame
+        // the portion the user is actually riding (boarding → alighting).
+        const boardingIdx = origin ? stops.findIndex(s => s.code === origin) : -1
+        const alightingIdx = destination ? stops.map(s => s.code).lastIndexOf(destination) : -1
+        const segmentStops =
+          boardingIdx >= 0 && alightingIdx > boardingIdx
+            ? stops.slice(boardingIdx, alightingIdx + 1)
+            : stops
+
         // ── Route polyline ────────────────────────────────────────────────────
-        const routeCoords = stops.map(s => [s.lon, s.lat] as [number, number])
+        const routeCoords = segmentStops.map(s => [s.lon, s.lat] as [number, number])
 
         map.addSource('train-route', {
           type: 'geojson',
@@ -201,9 +211,9 @@ export function TrainMap({ stops, departureScheduled, status, origin, destinatio
         })
 
         // ── Stop dots ─────────────────────────────────────────────────────────
-        const classifications = classifyStops(stops, departureScheduled, status)
+        const classifications = classifyStops(segmentStops, departureScheduled, status)
 
-        const stopFeatures = stops.map((s, i) => ({
+        const stopFeatures = segmentStops.map((s, i) => ({
           type: 'Feature' as const,
           geometry: { type: 'Point' as const, coordinates: [s.lon, s.lat] },
           properties: {
@@ -260,7 +270,7 @@ export function TrainMap({ stops, departureScheduled, status, origin, destinatio
         })
 
         // ── Train position marker ─────────────────────────────────────────────
-        const trainPos = computeTrainPosition(stops, departureScheduled, status)
+        const trainPos = computeTrainPosition(segmentStops, departureScheduled, status)
 
         const trainImg = new Image(40, 40)
         trainImg.onload = () => {
@@ -299,19 +309,7 @@ export function TrainMap({ stops, departureScheduled, status, origin, destinatio
         }
         trainImg.src = TRAIN_ICON_URI
 
-        // ── Fit bounds to the user's segment (boarding → destination) ────────
-        // Clip to only the stops between the user's boarding and alighting
-        // station so e.g. boarding at STP on the Empire Builder doesn't zoom
-        // all the way out to show the Seattle origin.
-        const boardingIdx = origin ? stops.findIndex(s => s.code === origin) : -1
-        const alightingIdx = destination
-          ? stops.map(s => s.code).lastIndexOf(destination)
-          : -1
-        const segmentStops =
-          boardingIdx >= 0 && alightingIdx > boardingIdx
-            ? stops.slice(boardingIdx, alightingIdx + 1)
-            : stops
-
+        // ── Fit bounds to the user's segment ─────────────────────────────────
         const lons = segmentStops.map(s => s.lon)
         const lats = segmentStops.map(s => s.lat)
         try {
@@ -330,9 +328,9 @@ export function TrainMap({ stops, departureScheduled, status, origin, destinatio
       mapRef.current?.remove()
       mapRef.current = null
     }
-  // Re-create map only when stops identity or departure date changes
+  // Re-create map when stops, segment bounds, or status change
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stops, departureScheduled, status])
+  }, [stops, departureScheduled, status, origin, destination])
 
   if (stops.length < 2) return null
 
