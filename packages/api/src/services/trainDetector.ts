@@ -39,17 +39,18 @@ export interface DetectedTrain {
 // Keyed lowercase for case-insensitive matching.
 const STATION_HINTS: Record<string, string> = {
   // Street address fragments
-  'kellogg': 'STP',        // 214 Kellogg Blvd E, St. Paul
+  'kellogg': 'MSP',        // 240 Kellogg Blvd E = St. Paul Union Depot (Amtrak code MSP)
   'canal st': 'NOL',       // New Orleans
   '30th st': 'PHL',
   'union station': '',      // too ambiguous alone — need city context
   'penn station': 'NYP',
   'penn st': 'NYP',
 
-  // City / neighborhood names → Amtrak code
-  'saint paul': 'STP',
-  'st. paul': 'STP',
-  'st paul': 'STP',
+  // City / neighborhood names → Amtrak code. St. Paul Union Depot serves the
+  // whole Minneapolis/St. Paul metro and Amtrak codes it MSP (there is no STP).
+  'saint paul': 'MSP',
+  'st. paul': 'MSP',
+  'st paul': 'MSP',
   'minneapolis': 'MSP',
   'chicago': 'CHI',
   'new york': 'NYP',

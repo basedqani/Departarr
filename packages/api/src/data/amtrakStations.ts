@@ -158,7 +158,7 @@ export const AMTRAK_STATION_TZ: Record<string, string> = {
   MIA: 'America/New_York', TPA: 'America/New_York', JAX: 'America/New_York',
   // Central
   CHI: 'America/Chicago', MCI: 'America/Chicago', STL: 'America/Chicago',
-  CHM: 'America/Chicago', MSD: 'America/Chicago', STP: 'America/Chicago',
+  CHM: 'America/Chicago', MSD: 'America/Chicago', MSP: 'America/Chicago',
   WNO: 'America/Chicago', LCR: 'America/Chicago', TOM: 'America/Chicago',
   MKE: 'America/Chicago', NOL: 'America/Chicago', SPI: 'America/Chicago',
   OKC: 'America/Chicago', TOP: 'America/Chicago', LNK: 'America/Chicago',
