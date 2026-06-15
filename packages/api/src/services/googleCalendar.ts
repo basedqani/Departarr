@@ -253,23 +253,62 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
               const schedule = await lookupTrainSchedule(detected.trainNumber, eventDate)
               if (!schedule) continue
 
-              // If we detected a boarding station from the event location/description,
-              // use it as origin if it appears in the route (so e.g. boarding at STP
-              // on the Empire Builder shows STP→SEA not CHI→SEA).
               let origin = schedule.origin
               let originName = schedule.originName ?? null
               let departureScheduled = schedule.departureScheduled
 
-              if (detected.boardingStation && detected.boardingStation !== schedule.origin) {
+              // The event's startDateTime is the most reliable signal for which stop
+              // the user boards at — it comes directly from the Amtrak booking.
+              // Primary method: match the event's local clock time against each stop's
+              // GTFS departure time. GTFS times are stored as local clock times, so a
+              // stop at 9:00 PM Central and a calendar event at "T21:00:00-05:00" both
+              // read "21:00" — regardless of the server timezone.
+              const eventStartDateTime = (start as { date?: string; dateTime?: string }).dateTime
+              if (eventStartDateTime) {
+                departureScheduled = new Date(eventStartDateTime)
+
+                // Extract HH:MM from the ISO local-time portion (before the tz offset)
+                const localMatch = eventStartDateTime.match(/T(\d{2}):(\d{2})/)
+                if (localMatch) {
+                  const eventLocalMin = parseInt(localMatch[1]) * 60 + parseInt(localMatch[2])
+
+                  let bestStop = schedule.stops[0]
+                  let bestDiff = Infinity
+                  for (const stop of schedule.stops) {
+                    const timeStr = stop.scheduledDep ?? stop.scheduledArr
+                    if (!timeStr) continue
+                    const parts = timeStr.split(':').map(Number)
+                    // Normalize GTFS time to 0–1439 (overnight trains use >24h)
+                    const stopLocalMin = ((parts[0] ?? 0) % 24) * 60 + (parts[1] ?? 0)
+                    // Circular diff to handle midnight wraparound
+                    const diff = Math.min(
+                      Math.abs(stopLocalMin - eventLocalMin),
+                      1440 - Math.abs(stopLocalMin - eventLocalMin)
+                    )
+                    if (diff < bestDiff) {
+                      bestDiff = diff
+                      bestStop = stop
+                    }
+                  }
+
+                  // Accept the time-based match if within 90 min and not already the route origin
+                  if (bestDiff <= 90 && bestStop.code !== schedule.origin) {
+                    origin = bestStop.code
+                    originName = bestStop.name
+                    console.log(`[calendar] Train ${detected.trainNumber}: time-based boarding → ${origin} (${originName}), event local ${localMatch[1]}:${localMatch[2]}, stop ${bestStop.scheduledDep}, diff ${bestDiff}min`)
+                  }
+                }
+              }
+
+              // Fallback: text-based boarding station detection (catches cases where
+              // there's no dateTime on the event, e.g. all-day events)
+              if (origin === schedule.origin && detected.boardingStation && detected.boardingStation !== schedule.origin) {
                 const boardingStop = schedule.stops.find(
                   s => s.code.toUpperCase() === detected.boardingStation!.toUpperCase()
                 )
                 if (boardingStop) {
                   origin = boardingStop.code
                   originName = boardingStop.name
-                  // Compute departure time by offsetting from origin stop's GTFS time.
-                  // We can't use setHours() here because GTFS times are "hours from midnight
-                  // on the service date" and may exceed 24 (overnight trains).
                   if (boardingStop.scheduledDep) {
                     const parseGtfsMs = (t: string): number => {
                       const parts = t.split(':').map(Number)
@@ -280,16 +319,8 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                     const boardingMs = parseGtfsMs(boardingStop.scheduledDep)
                     departureScheduled = new Date(schedule.departureScheduled.getTime() + (boardingMs - originMs))
                   }
-                  console.log(`[calendar] Train ${detected.trainNumber}: boarding at ${origin} (${originName}) not route origin ${schedule.origin}`)
+                  console.log(`[calendar] Train ${detected.trainNumber}: text-based boarding → ${origin} (${originName})`)
                 }
-              }
-
-              // For calendar-synced trains, the event's own start time is the most
-              // accurate departure time — it comes directly from the Amtrak booking
-              // confirmation, so prefer it over the GTFS-derived time.
-              const eventStartDateTime = (start as { date?: string; dateTime?: string }).dateTime
-              if (eventStartDateTime) {
-                departureScheduled = new Date(eventStartDateTime)
               }
 
               await prisma.train.create({
