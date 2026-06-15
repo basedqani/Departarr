@@ -51,7 +51,7 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
 
     const trains = await prisma.train.findMany({
       where,
-      orderBy: { departureScheduled: 'desc' },
+      orderBy: { departureScheduled: when === 'upcoming' ? 'asc' : 'desc' },
       include: { trip: { select: { id: true, name: true } } },
     })
     return reply.send(trains)
