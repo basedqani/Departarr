@@ -404,6 +404,9 @@ function buildSortedLegs(trip: TripWithLegs): TripLegItem[] {
 export function TripDetailPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const { data: trip, isLoading } = useQuery({
     queryKey: ['trip', id],
@@ -414,6 +417,19 @@ export function TripDetailPage(): React.ReactElement {
   const legs = trip ? buildSortedLegs(trip) : []
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const effectiveSelectedId = selectedId ?? legs[0]?.data.id ?? null
+
+  async function handleDeleteTrip(): Promise<void> {
+    setDeleting(true)
+    try {
+      await api.trips.delete(id!)
+      await queryClient.invalidateQueries({ queryKey: ['trips'] })
+      navigate('/upcoming')
+    } catch (err) {
+      setDeleting(false)
+      setConfirmDelete(false)
+      alert(err instanceof Error ? err.message : 'Could not delete this trip')
+    }
+  }
 
   if (isLoading) return (
     <div className="loading" style={{ paddingTop: '4rem' }}>
@@ -456,6 +472,34 @@ export function TripDetailPage(): React.ReactElement {
             </div>
           )}
         </div>
+        {confirmDelete ? (
+          <>
+            <button
+              className="secondary"
+              style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', flexShrink: 0 }}
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </button>
+            <button
+              className="danger"
+              style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', flexShrink: 0, whiteSpace: 'nowrap' }}
+              onClick={() => void handleDeleteTrip()}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Confirm delete'}
+            </button>
+          </>
+        ) : (
+          <button
+            className="danger"
+            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', flexShrink: 0 }}
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete
+          </button>
+        )}
       </div>
 
       {legs.length === 0 && (

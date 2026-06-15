@@ -50,9 +50,17 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
       startOfDay.setHours(0, 0, 0, 0)
       const endOfDay = new Date(now)
       endOfDay.setHours(23, 59, 59, 999)
+      // Include flights that depart today OR flights that are still en route
+      // (departed in the past but haven't landed/arrived/cancelled yet)
       where = {
         ...where,
-        departureScheduled: { gte: startOfDay, lte: endOfDay },
+        OR: [
+          { departureScheduled: { gte: startOfDay, lte: endOfDay } },
+          {
+            departureScheduled: { lt: startOfDay },
+            status: { notIn: ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled'] },
+          },
+        ],
       }
     } else if (when === 'upcoming') {
       where = { ...where, departureScheduled: { gt: now } }

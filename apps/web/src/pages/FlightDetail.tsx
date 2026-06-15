@@ -9,6 +9,7 @@ import type { AircraftPosition, Flight, FlightWithEvents, WeatherResult } from '
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
 import { AddToTripDialog } from '../components/AddToTripDialog'
+import { formatLayover } from '../lib/tripGrouping'
 
 const GlobeMap = lazy(() => import('../components/GlobeMap').then(m => ({ default: m.GlobeMap })))
 
@@ -335,7 +336,7 @@ function ConnectionCard({ flight }: { flight: FlightWithEvents }): React.ReactEl
           <div style={{ display: 'flex', gap: '0.875rem', alignItems: 'center' }}>
             <div style={{ minWidth: 56, textAlign: 'center' }}>
               <div style={{ fontSize: '1.75rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: conn.effectiveMinutes <= 0 ? 'var(--cancelled)' : conn.rating.color, lineHeight: 1 }}>
-                {conn.effectiveMinutes <= 0 ? '0m' : `${conn.effectiveMinutes}m`}
+                {conn.effectiveMinutes <= 0 ? '0m' : formatLayover(conn.effectiveMinutes)}
               </div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>to connect</div>
             </div>
