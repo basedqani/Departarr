@@ -106,21 +106,37 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
             const end = point([destAirport.lon, destAirport.lat])
             const arc = greatCircle(start, end, { npoints: 100 })
 
-            // Flatten the arc coords so the plane marker can ride the real
-            // great-circle track (not a straight lat/lon line). turf returns a
-            // MultiLineString when the arc splits at the antimeridian.
-            {
-              const c = arc.geometry.coordinates as [number, number][] | [number, number][][]
-              arcCoordsRef.current = (Array.isArray(c[0][0])
-                ? (c as [number, number][][]).flat()
-                : (c as [number, number][])) as [number, number][]
+            // Turf splits the arc into a MultiLineString at the antimeridian
+            // (±180°), leaving a visible gap in the line. Fix: unwrap the second
+            // segment's longitudes by ±360° so the whole route is one continuous
+            // LineString. MapLibre Mercator handles coords outside [-180,180].
+            const rawCoords = arc.geometry.coordinates as [number, number][] | [number, number][][]
+            const isMultiSeg = Array.isArray(rawCoords[0][0])
+            let arcCoords: [number, number][]
+            if (isMultiSeg) {
+              const segs = rawCoords as [number, number][][]
+              const lastLon = segs[0][segs[0].length - 1][0]
+              const firstLon = segs[1][0][0]
+              // Choose the offset that keeps the second segment continuous
+              const offset = Math.abs(lastLon + 360 - firstLon) < Math.abs(lastLon - 360 - firstLon) ? 360 : -360
+              const unwrapped = segs[1].map(([lon, lat]) => [lon + offset, lat] as [number, number])
+              arcCoords = [...segs[0] as [number, number][], ...unwrapped]
+            } else {
+              arcCoords = rawCoords as [number, number][]
+            }
+            arcCoordsRef.current = arcCoords
+
+            const continuousArc: GeoJSON.Feature<GeoJSON.LineString> = {
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: arcCoords },
+              properties: {},
             }
 
             // Add source
             if (!map.getSource('flight-arc')) {
               map.addSource('flight-arc', {
                 type: 'geojson',
-                data: arc,
+                data: continuousArc,
               })
             }
 
@@ -199,32 +215,27 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
               })
             }
 
-            // Camera: tightly frame the two airports so the route fills the
-            // view instead of floating as a tiny line on a whole continent.
-            type Coord = [number, number]
-            const raw = arc.geometry.coordinates as Coord[] | Coord[][]
-            const isMulti = Array.isArray(raw[0][0])
-
+            // Camera: frame the route. For antimeridian routes the unwrapped
+            // coords span past ±180 so fitBounds would wrap the world — detect
+            // this and fall back to an easeTo on the arc midpoint instead.
             const frame = (duration = 1200): void => {
               try {
-                if (isMulti) {
-                  // Antimeridian-crossing (e.g. LAX→NRT): fitBounds breaks
-                  // (spans ±180 → world bbox), so ease to the longer segment's
-                  // midpoint at a distance-appropriate zoom.
-                  const segs = raw as Coord[][]
-                  const longest = segs.reduce((a, b) => (a.length >= b.length ? a : b))
-                  const mid = longest[Math.floor(longest.length / 2)]
-                  const allLats = segs.flat().map(c => c[1])
-                  const latSpan = Math.max(...allLats) - Math.min(...allLats)
+                const lons = arcCoords.map(c => c[0])
+                const lats = arcCoords.map(c => c[1])
+                const lonSpan = Math.max(...lons) - Math.min(...lons)
+
+                if (lonSpan > 180) {
+                  // Antimeridian-crossing: ease to midpoint at distance-based zoom
+                  const mid = arcCoords[Math.floor(arcCoords.length / 2)]
+                  const latSpan = Math.max(...lats) - Math.min(...lats)
                   const zoom = latSpan > 35 ? 1.4 : latSpan > 20 ? 1.9 : 2.6
                   map.easeTo({ center: [mid[0], mid[1]], zoom, duration })
                 } else {
-                  // Normal route: fit both airports with breathing room. maxZoom
-                  // keeps short hops (e.g. MSP→ORD) from zooming in too far.
-                  const lons = [originAirport.lon, destAirport.lon]
-                  const lats = [originAirport.lat, destAirport.lat]
+                  // Normal route: fit both airports with breathing room.
+                  const aLons = [originAirport.lon, destAirport.lon]
+                  const aLats = [originAirport.lat, destAirport.lat]
                   map.fitBounds(
-                    [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+                    [[Math.min(...aLons), Math.min(...aLats)], [Math.max(...aLons), Math.max(...aLats)]],
                     { padding: { top: 80, bottom: 110, left: 70, right: 70 }, maxZoom: 5.2, duration }
                   )
                 }
