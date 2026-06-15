@@ -46,6 +46,7 @@ export function AddFlightPage(): React.ReactElement {
   const [preview, setPreview] = useState<FlightPreview | null>(null)
   const [trainPreview, setTrainPreview] = useState<TrainPreview | null>(null)
   const [boardingStopCode, setBoardingStopCode] = useState<string>('')
+  const [alightingStopCode, setAlightingStopCode] = useState<string>('')
 
   const { data: trips } = useQuery({ queryKey: ['trips'], queryFn: api.trips.list })
 
@@ -58,6 +59,7 @@ export function AddFlightPage(): React.ReactElement {
         const tp = await api.trains.lookup(ident.trim(), date)
         setTrainPreview(tp)
         setBoardingStopCode(tp.origin)
+        setAlightingStopCode(tp.destination)
         setStep('confirm')
       } else {
         const clean = ident.toUpperCase().replace(/\s+/g, '')
@@ -97,12 +99,13 @@ export function AddFlightPage(): React.ReactElement {
       try {
         const boardingStop = trainPreview.stops.find(s => s.code === boardingStopCode)
         const origin = boardingStopCode || trainPreview.origin
+        const destination = alightingStopCode || trainPreview.destination
         const train = await api.trains.add({
           trainNumber: ident.trim(),
           date,
           tripId: tripId || undefined,
           origin,
-          destination: trainPreview.destination,
+          destination,
           boardingStop: boardingStop ? { code: boardingStop.code, schDep: boardingStop.schDep ?? undefined } : undefined,
         })
         await queryClient.invalidateQueries({ queryKey: ['trains'] })
@@ -341,38 +344,62 @@ export function AddFlightPage(): React.ReactElement {
             <div className="card">
               <div style={{ marginBottom: '1rem' }}>
                 <div className="detail-route" style={{ fontSize: '1.75rem' }}>
-                  <span>{trainPreview.origin}</span>
+                  <span>{boardingStopCode || trainPreview.origin}</span>
                   <span className="detail-route-sep">›</span>
-                  <span>{trainPreview.destination}</span>
+                  <span>{alightingStopCode || trainPreview.destination}</span>
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '0.25rem' }}>
                   Train {trainPreview.trainNumber}{trainPreview.trainName ? ` · ${trainPreview.trainName}` : ''}
                 </div>
-                {(trainPreview.originName || trainPreview.destinationName) && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    <span>{trainPreview.originName ?? trainPreview.origin}</span>
-                    <span>{trainPreview.destinationName ?? trainPreview.destination}</span>
-                  </div>
-                )}
+                {(() => {
+                  const boardingStop = trainPreview.stops.find(s => s.code === boardingStopCode)
+                  const alightingStop = trainPreview.stops.find(s => s.code === alightingStopCode)
+                  const boardingName = boardingStop?.name ?? trainPreview.originName
+                  const alightingName = alightingStop?.name ?? trainPreview.destinationName
+                  return (boardingName || alightingName) ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      <span>{boardingName ?? boardingStopCode}</span>
+                      <span>{alightingName ?? alightingStopCode}</span>
+                    </div>
+                  ) : null
+                })()}
               </div>
 
-              {/* Boarding stop picker */}
+              {/* Boarding / alighting stop pickers */}
               {trainPreview.stops.length > 1 && (
-                <div style={{ marginTop: '0.875rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
-                    Boarding at
-                  </label>
-                  <select
-                    value={boardingStopCode}
-                    onChange={e => setBoardingStopCode(e.target.value)}
-                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: 10, border: '1px solid var(--hairline)', background: 'var(--card)', color: 'var(--text)', fontSize: '0.875rem', appearance: 'none', cursor: 'pointer' }}
-                  >
-                    {trainPreview.stops.map((stop, i) => (
-                      <option key={`${stop.code}-${i}`} value={stop.code}>
-                        {stop.code} — {stop.name}{stop.schDep ? ` (${stop.schDep.substring(0, 5)})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.875rem' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
+                      Boarding at
+                    </label>
+                    <select
+                      value={boardingStopCode}
+                      onChange={e => setBoardingStopCode(e.target.value)}
+                      style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: 10, border: '1px solid var(--hairline)', background: 'var(--card)', color: 'var(--text)', fontSize: '0.82rem', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      {trainPreview.stops.map((stop, i) => (
+                        <option key={`${stop.code}-${i}`} value={stop.code}>
+                          {stop.code} — {stop.name}{stop.schDep ? ` (${stop.schDep.substring(0, 5)})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
+                      Alighting at
+                    </label>
+                    <select
+                      value={alightingStopCode}
+                      onChange={e => setAlightingStopCode(e.target.value)}
+                      style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: 10, border: '1px solid var(--hairline)', background: 'var(--card)', color: 'var(--text)', fontSize: '0.82rem', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      {trainPreview.stops.map((stop, i) => (
+                        <option key={`${stop.code}-${i}`} value={stop.code}>
+                          {stop.code} — {stop.name}{(stop.schDep ?? stop.schArr) ? ` (${(stop.schDep ?? stop.schArr)!.substring(0, 5)})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
 
@@ -381,22 +408,27 @@ export function AddFlightPage(): React.ReactElement {
                   <div className="info-cell-label">Departure</div>
                   <div className="info-cell-value">
                     {(() => {
+                      const originStop = trainPreview.stops[0]
                       const sel = trainPreview.stops.find(s => s.code === boardingStopCode)
-                      const timeStr = sel?.schDep ?? sel?.schArr
-                      if (timeStr) {
-                        const [h, m] = timeStr.split(':').map(Number)
-                        const d = new Date(trainPreview.departureScheduled)
-                        d.setHours(h, m, 0, 0)
-                        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      }
-                      return new Date(trainPreview.departureScheduled).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      const gtfsMs = (t: string) => { const [h,m,s] = t.split(':').map(Number); return ((h??0)*3600+(m??0)*60+(s??0))*1000 }
+                      const base = gtfsMs(originStop.schDep ?? originStop.schArr ?? '0:0:0')
+                      const offset = gtfsMs(sel?.schDep ?? sel?.schArr ?? originStop.schDep ?? '0:0:0') - base
+                      return new Date(new Date(trainPreview.departureScheduled).getTime() + offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                     })()}
                   </div>
                 </div>
                 <div className="info-cell">
                   <div className="info-cell-label">Arrival</div>
                   <div className="info-cell-value">
-                    {new Date(trainPreview.arrivalScheduled).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {(() => {
+                      const originStop = trainPreview.stops[0]
+                      const lastStop = trainPreview.stops[trainPreview.stops.length - 1]
+                      const sel = trainPreview.stops.find(s => s.code === alightingStopCode)
+                      const gtfsMs = (t: string) => { const [h,m,s] = t.split(':').map(Number); return ((h??0)*3600+(m??0)*60+(s??0))*1000 }
+                      const base = gtfsMs(originStop.schDep ?? originStop.schArr ?? '0:0:0')
+                      const offset = gtfsMs(sel?.schArr ?? sel?.schDep ?? lastStop.schArr ?? lastStop.schDep ?? '0:0:0') - base
+                      return new Date(new Date(trainPreview.departureScheduled).getTime() + offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    })()}
                   </div>
                 </div>
               </div>
