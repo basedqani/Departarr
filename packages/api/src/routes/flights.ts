@@ -179,12 +179,26 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send(flight)
   })
 
-  // DELETE /api/flights/past — remove all past flights for the current user
+  // DELETE /api/flights/past — remove all past flights for the current user.
+  // "Past" is defined by ARRIVAL time, matching the GET /flights?when=past
+  // query: an item is Past only once it has actually arrived (now is AFTER its
+  // arrival time actual ?? estimated ?? scheduled) OR its status is
+  // landed/arrived/cancelled. A passed DEPARTURE time alone does NOT make it
+  // deletable, so en-route flights (departed but not yet arrived) are kept.
   app.delete('/flights/past', async (req, reply) => {
     const userId = (req.user as { id: string }).id
     const now = new Date()
+    const arrivedStatuses = ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled']
     const result = await prisma.flight.deleteMany({
-      where: { userId, departureScheduled: { lt: now } },
+      where: {
+        userId,
+        OR: [
+          { arrivalActual: { lte: now } },
+          { arrivalActual: null, arrivalEstimated: { lte: now } },
+          { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { lte: now } },
+          { status: { in: arrivedStatuses } },
+        ],
+      },
     })
     return reply.send({ deleted: result.count })
   })
