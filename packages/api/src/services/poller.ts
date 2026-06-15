@@ -277,6 +277,26 @@ async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> 
   }
 }
 
+// ── Stub detection helper ────────────────────────────────────────────────
+
+/**
+ * Returns true if this flight was saved as a stub (no real AeroDataBox data)
+ * and needs enrichment. Stubs have empty or obviously-wrong airport codes.
+ * "Obviously wrong" means a 3-letter string that came from text-parsing
+ * calendar event body (e.g. "GHT" from "fliGHT", "MIN" from "MINneapolis").
+ */
+function isStubFlight(flight: Flight): boolean {
+  const origin = flight.origin ?? ''
+  const dest = flight.destination ?? ''
+  // Empty strings = classic stub
+  if (origin === '' || dest === '') return true
+  // "???" placeholder
+  if (origin === '???' || dest === '???') return true
+  // Never-polled flights with suspicious codes (lastPolledAt null = fresh stub)
+  if (flight.lastPolledAt === null) return true
+  return false
+}
+
 // ── Fetch helper (one real API call) ─────────────────────────────────────
 
 async function fetchFresh(flight: Flight): Promise<FlightData | null> {
@@ -305,16 +325,49 @@ async function runPollCycle(): Promise<void> {
   const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000)
   const windowEnd = new Date(now.getTime() + 48 * 60 * 60 * 1000)
 
-  const candidates = await prisma.flight.findMany({
-    where: {
-      departureScheduled: { gte: windowStart, lte: windowEnd },
-      status: { notIn: [...TERMINAL_STATUSES] },
-    },
-  })
+  // Also fetch stubs (empty origin/dest) that are in the future — they need
+  // enrichment regardless of the normal polling window.
+  const futureStubEnd = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
 
-  // Filter to flights that are actually due for a poll
-  const due = candidates.filter((f) => {
+  const [windowCandidates, stubCandidates] = await Promise.all([
+    prisma.flight.findMany({
+      where: {
+        departureScheduled: { gte: windowStart, lte: windowEnd },
+        status: { notIn: [...TERMINAL_STATUSES] },
+      },
+    }),
+    prisma.flight.findMany({
+      where: {
+        departureScheduled: { gte: now, lte: futureStubEnd },
+        status: { notIn: [...TERMINAL_STATUSES] },
+        OR: [
+          { origin: '' },
+          { destination: '' },
+          { origin: '???' },
+          { destination: '???' },
+        ],
+      },
+    }),
+  ])
+
+  // Merge, deduplicate by id
+  const seenIds = new Set<string>()
+  const allCandidates: typeof windowCandidates = []
+  for (const f of [...windowCandidates, ...stubCandidates]) {
+    if (!seenIds.has(f.id)) {
+      seenIds.add(f.id)
+      allCandidates.push(f)
+    }
+  }
+
+  // Filter to flights that are actually due for a poll.
+  // Stubs (never polled) are always included.
+  const due = allCandidates.filter((f) => {
     if (f.lastPolledAt == null) return true
+    if (isStubFlight(f)) {
+      // Re-try stubs every hour until enriched
+      return now.getTime() - f.lastPolledAt.getTime() >= HOUR_1
+    }
     return now.getTime() - f.lastPolledAt.getTime() >= requiredPollIntervalMs(f, now)
   })
 

@@ -188,8 +188,11 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
 
               if (!flightData) {
                 // AeroDataBox doesn't know about this flight yet (too far out, or
-                // unrecognised flight number). Save a stub using data from the
-                // calendar event so the user can see it in the UI.
+                // unrecognised flight number). Save a stub so the user can see it in
+                // the UI. Do NOT use text-parsed airport codes (origin/dest from the
+                // calendar event text) — these are unreliable (e.g. "fliGHT TO
+                // DENpasar" produces "GHT"→"DEN"). The poller will enrich the stub
+                // with real data once AeroDataBox has it.
                 console.log(`[calendar] ${flight.ident} on ${date}: no AeroDataBox data, saving stub from calendar event`)
                 const stubDeparture = departureUtc ? new Date(departureUtc) : new Date(`${date}T00:00:00Z`)
                 // Estimate arrival as 2h after departure when we have no real data
@@ -201,8 +204,8 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                     faFlightId: null,
                     airlineIata: flight.ident.match(/^([A-Z]{2})\d/)?.[1] ?? null,
                     flightNumber: flight.ident.replace(/^[A-Z]{2}/, '') ?? null,
-                    origin: flight.origin ?? '',
-                    destination: flight.dest ?? '',
+                    origin: '',
+                    destination: '',
                     departureScheduled: stubDeparture,
                     departureEstimated: null,
                     arrivalScheduled: stubArrival,
