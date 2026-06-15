@@ -63,6 +63,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
     // before it completes, the orphaned map must be removed or it leaks into
     // the container alongside the replacement.
     let cancelled = false
+    let roRef: ResizeObserver | null = null
 
     void (async () => {
       const maplibre = await import('maplibre-gl')
@@ -72,14 +73,14 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
 
       const map = new Map({
         container: containerRef.current!,
-        style: 'https://tiles.openfreemap.org/styles/liberty',
+        style: 'https://tiles.openfreemap.org/styles/positron',
         center: [0, 20],
         zoom: 1.5,
         attributionControl: false,
         interactive: true,
         dragPan: true,
         scrollZoom: true,
-        dragRotate: true,
+        dragRotate: false,
         touchZoomRotate: true,
         keyboard: true,
         pitchWithRotate: false,
@@ -87,15 +88,14 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
 
       mapRef.current = map
 
+      // Fix white/blank map on first open: re-read the actual DOM dimensions
+      // after the load event fires (the container may have been 0px during init).
+      roRef = new ResizeObserver(() => { map.resize() })
+      if (containerRef.current) roRef.observe(containerRef.current)
+
       map.on('load', () => {
         if (cancelled) return
-        // Globe projection (MapLibre v5)
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(map as any).setProjection({ type: 'globe' })
-        } catch {
-          // fallback: mercator is fine
-        }
+        map.resize()
 
         if (!originAirport || !destAirport) return
 
@@ -276,6 +276,7 @@ export function GlobeMap({ origin, destination, position, departureScheduled, ar
 
     return () => {
       cancelled = true
+      roRef?.disconnect()
       mapRef.current?.remove()
       mapRef.current = null
     }
