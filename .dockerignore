@@ -1,0 +1,33 @@
+# Dependencies — never send to Docker build context
+node_modules
+packages/*/node_modules
+apps/*/node_modules
+
+# Build outputs already rebuilt inside Docker
+packages/*/dist
+apps/*/dist
+dist
+
+# Local data / SQLite database
+data
+*.db
+*.sqlite
+
+# Git history
+.git
+.gitignore
+
+# Docs / CI / tooling
+.github
+docs
+*.md
+!README.md
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+
+# Claude Code agent files
+.claude
