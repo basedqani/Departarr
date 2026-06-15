@@ -77,6 +77,25 @@ export async function exchangeCodeForTokens(userId: string, code: string, req?: 
   })
 }
 
+/**
+ * Train auto-import from the calendar is DISABLED for now.
+ *
+ * Amtrak GTFS schedules always represent a train's FULL run from its true
+ * origin (e.g. the Empire Builder #8 from Seattle), anchored to that origin's
+ * departure. Reliably re-anchoring a multi-day train to the user's actual
+ * mid-route boarding stop (e.g. boarding #8 at St. Paul the morning after it
+ * left Seattle) is not yet solved: the time-based match is thrown off by the
+ * wrong service-day anchor, and the address-based match misses because the
+ * GTFS stop_id rarely equals our 3-letter station code. Auto-import therefore
+ * produced wrong origins (Seattle→Chicago instead of St. Paul→Chicago).
+ *
+ * Until that's properly handled, trains are added MANUALLY (the manual add flow
+ * has explicit Boarding/Arriving pickers and correct GTFS offset arithmetic).
+ * Flip this to true to re-enable auto-import once the boarding-stop resolution
+ * is robust.
+ */
+const ENABLE_TRAIN_AUTOSYNC = false
+
 export interface SyncResult {
   flightsFound: number
   trainsFound: number
@@ -290,11 +309,15 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
             }
           }
           // ── Train detection ───────────────────────────────────────────
-          const detectedTrains = detectTrainsInEvent({
-            summary: event.summary,
-            description: event.description,
-            location: event.location,
-          })
+          // Disabled — see ENABLE_TRAIN_AUTOSYNC note above. Trains are added
+          // manually until mid-route boarding-stop resolution is robust.
+          const detectedTrains = ENABLE_TRAIN_AUTOSYNC
+            ? detectTrainsInEvent({
+                summary: event.summary,
+                description: event.description,
+                location: event.location,
+              })
+            : []
 
           for (const detected of detectedTrains) {
             try {
