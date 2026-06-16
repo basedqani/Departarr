@@ -9,6 +9,7 @@ export const RECOGNIZED_KEYS = [
   'allow_registration',
   'aeroapi_monthly_budget',
   'aerodatabox_monthly_budget',
+  'flight_data_mode',
 ] as const
 
 export type SettingKey = (typeof RECOGNIZED_KEYS)[number]

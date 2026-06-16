@@ -120,7 +120,7 @@ async function canEnrich(state: PhaseState): Promise<boolean> {
     console.log(`[orchestrator] Flight ${state.flightId} enrichment cap reached (${MAX_ENRICHMENTS})`)
     return false
   }
-  if (isMockMode()) return true  // mock calls are free
+  if (await isMockMode()) return true  // mock calls are free
   if (!hasFlightAwareKey()) return false
   if (await isActiveProviderOverBudget()) {
     console.log(`[orchestrator] Provider over budget — skipping enrichment for flight ${state.flightId}`)

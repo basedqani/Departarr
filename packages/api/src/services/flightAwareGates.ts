@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs'
 import { createRequire } from 'module'
+import { getSetting } from '../lib/settings.js'
 
 const AEROAPI_BASE = 'https://aeroapi.flightaware.com/aeroapi'
 
@@ -21,9 +22,11 @@ export function hasFlightAwareKey(): boolean {
   return !!(process.env.FLIGHTAWARE_API_KEY)
 }
 
-/** Returns true if mock mode is active */
-export function isMockMode(): boolean {
-  return process.env.FLIGHT_DATA_MODE === 'MOCK'
+/** Returns true if mock mode is active (env var OR admin DB setting) */
+export async function isMockMode(): Promise<boolean> {
+  if (process.env.FLIGHT_DATA_MODE === 'MOCK') return true
+  const dbVal = await getSetting('flight_data_mode').catch(() => null)
+  return dbVal === 'MOCK'
 }
 
 function parseDateOrUndefined(value: string | null | undefined): Date | undefined {
@@ -88,7 +91,7 @@ export async function fetchGateEnrichment(
   faFlightId: string,
   apiKey?: string
 ): Promise<GateEnrichment | null> {
-  if (isMockMode()) {
+  if (await isMockMode()) {
     return fetchGateEnrichmentMock()
   }
 

@@ -398,7 +398,12 @@ export function SettingsPage(): React.ReactElement {
               checked={allowRegistration}
               onChange={toggleAllowRegistration}
             />
-
+            <ToggleRow
+              label="Mock Mode"
+              hint="Redirect all FlightAware enrichment calls to local fixture data — zero credits consumed. Safe to leave on while testing."
+              checked={settings?.flight_data_mode === 'MOCK'}
+              onChange={v => saveSetting('flight_data_mode', v ? 'MOCK' : 'LIVE')}
+            />
           </div>
         </>
       )}
