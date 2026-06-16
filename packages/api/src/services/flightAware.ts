@@ -109,11 +109,22 @@ export async function lookupFlight(
   hint?: { origin?: string; dest?: string; departureUtc?: string },
 ): Promise<FlightData | null> {
   const apiKey = await getApiKey()
-  if (apiKey) return lookupFlightAware(ident, date)
+  if (apiKey) {
+    const result = await lookupFlightAware(ident, date)
+    if (result) return result
+    // FA failed (no key budget, network error) — fall through
+  }
 
-  if (await getAeroDataBoxKey()) return lookupAeroDataBox(ident, date, hint)
+  if (await getAeroDataBoxKey()) {
+    try {
+      const result = await lookupAeroDataBox(ident, date, hint)
+      if (result) return result
+    } catch {
+      // AeroDataBox over quota or error — fall through to demo
+    }
+  }
 
-  // No real provider configured → deterministic demo data (free, no cost)
+  // No real provider available or all failed → deterministic demo data (free, no cost)
   return generateStubFlight(ident, date)
 }
 
@@ -165,7 +176,12 @@ export async function lookupAllFlightLegs(
   }
 
   if (await getAeroDataBoxKey()) {
-    return lookupAllLegsAeroDataBox(ident, date)
+    try {
+      const legs = await lookupAllLegsAeroDataBox(ident, date)
+      if (legs.length > 0) return legs
+    } catch {
+      // AeroDataBox over quota or error — fall through to demo
+    }
   }
 
   // Demo mode: single stub leg
