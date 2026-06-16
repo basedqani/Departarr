@@ -23,6 +23,7 @@ import { calendarRoutes } from './routes/calendar.js'
 import { settingsRoutes } from './routes/settings.js'
 import { trainRoutes } from './routes/trains.js'
 import { startPoller } from './services/poller.js'
+import { startTrackingOrchestrator } from './services/trackingOrchestrator.js'
 import { startTrainPoller } from './services/trainPoller.js'
 import { startCalendarScheduler } from './services/calendarScheduler.js'
 import { wsClients } from './lib/wsClients.js'
@@ -134,6 +135,7 @@ try {
   await app.listen({ port, host: '0.0.0.0' })
   console.log(`API listening on port ${port}`)
   startPoller()
+  startTrackingOrchestrator()
   startTrainPoller()
   startCalendarScheduler()
 } catch (err) {
