@@ -4,7 +4,7 @@ import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api, type FlightPreview, type TrainPreview } from '../lib/api'
 import { getAirport } from '../lib/airports'
-import { formatLocalTime, getAirportTz } from '../lib/format'
+import { formatLocalTime, getAirportTz, getAmtrakStationTz } from '../lib/format'
 import { StatusBadge } from '../components/StatusBadge'
 
 type Step = 'form' | 'pick-leg' | 'confirm'
@@ -413,7 +413,9 @@ export function AddFlightPage(): React.ReactElement {
                       const gtfsMs = (t: string) => { const [h,m,s] = t.split(':').map(Number); return ((h??0)*3600+(m??0)*60+(s??0))*1000 }
                       const base = gtfsMs(originStop.schDep ?? originStop.schArr ?? '0:0:0')
                       const offset = gtfsMs(sel?.schDep ?? sel?.schArr ?? originStop.schDep ?? '0:0:0') - base
-                      return new Date(new Date(trainPreview.departureScheduled).getTime() + offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      const utc = new Date(new Date(trainPreview.departureScheduled).getTime() + offset)
+                      const tz = getAmtrakStationTz(boardingStopCode || trainPreview.origin)
+                      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(utc)
                     })()}
                   </div>
                 </div>
@@ -427,7 +429,9 @@ export function AddFlightPage(): React.ReactElement {
                       const gtfsMs = (t: string) => { const [h,m,s] = t.split(':').map(Number); return ((h??0)*3600+(m??0)*60+(s??0))*1000 }
                       const base = gtfsMs(originStop.schDep ?? originStop.schArr ?? '0:0:0')
                       const offset = gtfsMs(sel?.schArr ?? sel?.schDep ?? lastStop.schArr ?? lastStop.schDep ?? '0:0:0') - base
-                      return new Date(new Date(trainPreview.departureScheduled).getTime() + offset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      const utc = new Date(new Date(trainPreview.departureScheduled).getTime() + offset)
+                      const tz = getAmtrakStationTz(arrivingStopCode || trainPreview.destination)
+                      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(utc)
                     })()}
                   </div>
                 </div>

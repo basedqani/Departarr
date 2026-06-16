@@ -268,9 +268,30 @@ function gtfsTimeToDate(baseMidnightLocal: Date, timeStr: string): Date {
 
 // ── Main export ───────────────────────────────────────────────────────────
 
+/** Build the service-runs-on-date map for one candidate date. */
+async function buildServiceMap(
+  calendarRaw: Record<string, string>[],
+  calendarDatesRaw: Record<string, string>[],
+  dateObj: Date,
+  dateCompact: string,
+): Promise<Map<string, boolean>> {
+  const map = new Map<string, boolean>()
+  for (const row of calendarRaw) {
+    const start = parseGtfsDate(row.start_date)
+    const end = parseGtfsDate(row.end_date)
+    if (dateObj < start || dateObj > end) { map.set(row.service_id, false); continue }
+    map.set(row.service_id, row[dowField(dateObj)] === '1')
+  }
+  for (const row of calendarDatesRaw) {
+    if (row.date !== dateCompact) continue
+    map.set(row.service_id, parseInt(row.exception_type, 10) === 1)
+  }
+  return map
+}
+
 export async function lookupTrainSchedule(
   trainNumber: string,
-  date: string // YYYY-MM-DD
+  date: string // YYYY-MM-DD — may be the user's boarding date, not the train's departure date
 ): Promise<TrainSchedule | null> {
   try {
     await ensureGtfsFresh()
@@ -280,10 +301,6 @@ export async function lookupTrainSchedule(
   }
 
   try {
-    // Parse date
-    const dateCompact = date.replace(/-/g, '') // YYYYMMDD
-    const dateObj = new Date(date + 'T00:00:00Z')
-
     // 1. Find route(s) by trip_short_name = trainNumber
     const tripsRaw = await readGtfsFile('trips.txt')
     const matchingTrips = tripsRaw.filter(t => t.trip_short_name === trainNumber)
@@ -296,55 +313,69 @@ export async function lookupTrainSchedule(
       routeNameMap.set(r.route_id, r.route_long_name ?? '')
     }
 
-    // 2. Build service_id -> runs-on-date map
     const calendarRaw = await readGtfsFile('calendar.txt')
     const calendarDatesRaw = await readGtfsFile('calendar_dates.txt')
 
-    const serviceRunsOnDate = new Map<string, boolean>()
-
-    // Process calendar.txt (regular schedule)
-    for (const row of calendarRaw) {
-      const start = parseGtfsDate(row.start_date)
-      const end = parseGtfsDate(row.end_date)
-      if (dateObj < start || dateObj > end) {
-        serviceRunsOnDate.set(row.service_id, false)
-        continue
-      }
-      const dow = dowField(dateObj)
-      const runs = row[dow] === '1'
-      serviceRunsOnDate.set(row.service_id, runs)
+    // 2. Try the user's date AND the day before.
+    // Multi-day trains (Empire Builder, Coast Starlight…) depart the origin station one
+    // calendar day before a mid-route boarding stop. GTFS keys the service to the
+    // origin-departure date, so if the user provides their boarding date (day N) the
+    // correct GTFS service may only exist on day N-1.
+    const candidates: Array<{ serviceDate: string; validTrip: Record<string,string> }> = []
+    for (let delta = 0; delta <= 1; delta++) {
+      const d = new Date(date + 'T00:00:00Z')
+      d.setUTCDate(d.getUTCDate() - delta)
+      const ds = d.toISOString().substring(0, 10)
+      const dc = ds.replace(/-/g, '')
+      const map = await buildServiceMap(calendarRaw, calendarDatesRaw, d, dc)
+      const trip = matchingTrips.find(t => map.get(t.service_id) === true)
+      if (trip) candidates.push({ serviceDate: ds, validTrip: trip })
     }
+    if (candidates.length === 0) return null
 
-    // Apply calendar_dates.txt exceptions
-    for (const row of calendarDatesRaw) {
-      if (row.date !== dateCompact) continue
-      const type = parseInt(row.exception_type, 10)
-      if (type === 1) {
-        serviceRunsOnDate.set(row.service_id, true) // added
-      } else if (type === 2) {
-        serviceRunsOnDate.set(row.service_id, false) // removed
-      }
-    }
-
-    // 3. Find the trip that runs on the given date
-    const validTrip = matchingTrips.find(t => serviceRunsOnDate.get(t.service_id) === true)
-    if (!validTrip) return null
-
-    const trainName = routeNameMap.get(validTrip.route_id) ?? validTrip.trip_headsign ?? ''
-
-    // 4. Load stops.txt for station info
+    // 3. Load stops once (shared between candidates)
     const stopsRaw = await readGtfsFile('stops.txt')
     const stopMap = new Map<string, { name: string; lat: number; lon: number }>()
     for (const s of stopsRaw) {
-      stopMap.set(s.stop_id, {
-        name: s.stop_name ?? s.stop_id,
-        lat: parseFloat(s.stop_lat) || 0,
-        lon: parseFloat(s.stop_lon) || 0,
-      })
+      stopMap.set(s.stop_id, { name: s.stop_name ?? s.stop_id, lat: parseFloat(s.stop_lat) || 0, lon: parseFloat(s.stop_lon) || 0 })
+    }
+    const stopTimesRaw = await readGtfsFile('stop_times.txt')
+
+    // 4. Pick the best candidate: prefer the one whose origin departure is on or before the
+    //    user's requested date (i.e. the trip that is actually running on the user's date).
+    //    If both qualify, prefer the one with the later origin departure (day N is better than N-1
+    //    when both have a service — means the user's date is the actual departure date).
+    let chosen: { serviceDate: string; validTrip: Record<string,string>; firstDep: Date } | null = null
+    const userDateObj = new Date(date + 'T00:00:00Z')
+
+    for (const { serviceDate, validTrip } of candidates) {
+      const tripStopTimes = stopTimesRaw
+        .filter(st => st.trip_id === validTrip.trip_id)
+        .sort((a, b) => parseInt(a.stop_sequence, 10) - parseInt(b.stop_sequence, 10))
+      if (tripStopTimes.length < 2) continue
+
+      const firstStop = tripStopTimes[0]
+      const originId = firstStop.stop_id
+      const originTzCandidate = getAmtrakStationTzBackend(originId)
+      const baseMidnight = localMidnightUtc(serviceDate, originTzCandidate)
+      const firstDepMs = parseGtfsTime(firstStop.departure_time || firstStop.arrival_time)
+      const firstDepDate = new Date(baseMidnight.getTime() + firstDepMs)
+
+      // The origin departure must be on or before the user's date (not in the future relative to day end)
+      const userDayEnd = new Date(userDateObj.getTime() + 24 * 60 * 60 * 1000)
+      if (firstDepDate >= userDayEnd) continue // this departure is AFTER the user's date — skip
+
+      if (!chosen || firstDepDate > chosen.firstDep) {
+        chosen = { serviceDate, validTrip, firstDep: firstDepDate }
+      }
     }
 
-    // 5. Load stop_times.txt for this trip
-    const stopTimesRaw = await readGtfsFile('stop_times.txt')
+    if (!chosen) return null
+
+    const { serviceDate, validTrip } = chosen
+    const trainName = routeNameMap.get(validTrip.route_id) ?? validTrip.trip_headsign ?? ''
+
+    // 5. Load stop times for the chosen trip
     const tripStopTimes = stopTimesRaw
       .filter(st => st.trip_id === validTrip.trip_id)
       .sort((a, b) => parseInt(a.stop_sequence, 10) - parseInt(b.stop_sequence, 10))
@@ -361,9 +392,10 @@ export async function lookupTrainSchedule(
 
     // Use the origin station's local timezone as the base for GTFS time arithmetic.
     // GTFS times are local clock times, not UTC offsets — e.g. Empire Builder departs
-    // Seattle at 06:10 PST, stored as "06:10:00". Using UTC midnight would be off by 8h.
+    // Seattle at 18:10 PST on service date June 26, stored as "18:10:00". Using the
+    // user's boarding date (June 27) as the midnight base would produce times 24h off.
     const originTz = getAmtrakStationTzBackend(origin)
-    const baseMidnightLocal = localMidnightUtc(date, originTz)
+    const baseMidnightLocal = localMidnightUtc(serviceDate, originTz)
 
     const departureScheduled = gtfsTimeToDate(baseMidnightLocal, firstStop.departure_time || firstStop.arrival_time)
     const arrivalScheduled = gtfsTimeToDate(baseMidnightLocal, lastStop.arrival_time || lastStop.departure_time)
