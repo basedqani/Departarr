@@ -83,6 +83,8 @@ function flightProgress(flight: Flight): number | null {
   const dep = new Date(flight.departureActual ?? flight.departureScheduled).getTime()
   const arr = new Date(flight.arrivalEstimated ?? flight.arrivalScheduled).getTime()
   const now = Date.now()
+  // Don't show progress bar if departure time hasn't passed yet
+  if (dep > now) return null
   if (dep >= arr) return null
   return Math.max(0, Math.min(100, ((now - dep) / (arr - dep)) * 100))
 }
@@ -92,7 +94,7 @@ function countdownColor(flight: Flight): string {
   if (st === 'cancelled' || st === 'arrived' || st === 'landed') return 'var(--muted-status)'
   const depTime = new Date(flight.departureActual ?? flight.departureEstimated ?? flight.departureScheduled).getTime()
   const diff = depTime - Date.now()
-  const hasDeparted = !!flight.departureActual || st === 'en-route' || st === 'departed'
+  const hasDeparted = !!flight.departureActual || depTime <= Date.now()
   if (!hasDeparted && diff < 30 * 60 * 1000) return 'var(--cancelled)'
   return 'var(--accent)'
 }

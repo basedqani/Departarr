@@ -71,8 +71,15 @@ function computeCountdown(flight: FlightTimes): string {
   }
 
   if (st === 'en-route' || st === 'departed') {
-    if (arrTime > now) return `Lands in ${formatDuration(arrTime - now)}`
-    return 'Landing soon'
+    // Only show airborne UI if the plane has actually left — departureActual set
+    // or scheduled departure time is in the past. FlightAware sometimes returns
+    // "Departed" for gate-push before wheels-off, and before departure time.
+    const hasActuallyDeparted = !!flight.departureActual || depTime <= now
+    if (hasActuallyDeparted) {
+      if (arrTime > now) return `Lands in ${formatDuration(arrTime - now)}`
+      return 'Landing soon'
+    }
+    // Status says departed/en-route but departure time hasn't passed yet — show pre-departure
   }
 
   if (st === 'boarding') {
