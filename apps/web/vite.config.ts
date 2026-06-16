@@ -29,11 +29,23 @@ export default defineConfig({
         // "redirected" response to a navigation and the browser shows a blank
         // page. Excludes /api from the SPA navigation fallback…
         navigateFallbackDenylist: [/^\/api\//],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
-            // …and only cache /api *data* requests, never /api/auth/* (OAuth
-            // 302s must pass straight through to the browser).
-            urlPattern: /^\/api\/(?!auth\/)/,
+            // Cache /api/auth/me with a short network timeout so offline users
+            // get a stale response rather than being stuck on the login screen.
+            urlPattern: /\/api\/auth\/me/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'auth-me-cache',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 1, maxAgeSeconds: 86400 },
+            },
+          },
+          {
+            // Cache all other /api *data* requests, but never /api/auth/* OAuth
+            // 302 redirects — those must pass straight through to the browser.
+            urlPattern: /^\/api\/(?!auth\/(?!me))/,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

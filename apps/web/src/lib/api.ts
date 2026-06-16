@@ -43,13 +43,30 @@ export const api = {
   },
 
   flights: {
-    list: (when?: string) => {
-      if (!when) return request<Flight[]>('/flights')
-      // Send the client's local date and UTC-offset so the server can compute
-      // correct day boundaries regardless of the server's own timezone.
-      const localDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
-      const tzOffset = new Date().getTimezoneOffset() // minutes behind UTC
-      return request<Flight[]>(`/flights?when=${when}&localDate=${localDate}&tzOffset=${tzOffset}`)
+    list: async (when?: string): Promise<Flight[]> => {
+      const cacheKey = when === 'today' ? 'departarr_cache_flights_today'
+        : when === 'upcoming' ? 'departarr_cache_flights_upcoming'
+        : null
+      try {
+        let result: Flight[]
+        if (!when) {
+          result = await request<Flight[]>('/flights')
+        } else {
+          // Send the client's local date and UTC-offset so the server can compute
+          // correct day boundaries regardless of the server's own timezone.
+          const localDate = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD
+          const tzOffset = new Date().getTimezoneOffset() // minutes behind UTC
+          result = await request<Flight[]>(`/flights?when=${when}&localDate=${localDate}&tzOffset=${tzOffset}`)
+        }
+        if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(result))
+        return result
+      } catch (err) {
+        if (!navigator.onLine && cacheKey) {
+          const cached = localStorage.getItem(cacheKey)
+          if (cached) return JSON.parse(cached) as Flight[]
+        }
+        throw err
+      }
     },
     get: (id: string) =>
       request<FlightWithEvents>(`/flights/${id}`),
@@ -87,11 +104,28 @@ export const api = {
   },
 
   trains: {
-    list: (when?: string) => {
-      if (!when) return request<Train[]>('/trains')
-      const localDate = new Date().toLocaleDateString('en-CA')
-      const tzOffset = new Date().getTimezoneOffset()
-      return request<Train[]>(`/trains?when=${when}&localDate=${localDate}&tzOffset=${tzOffset}`)
+    list: async (when?: string): Promise<Train[]> => {
+      const cacheKey = when === 'today' ? 'departarr_cache_trains_today'
+        : when === 'upcoming' ? 'departarr_cache_trains_upcoming'
+        : null
+      try {
+        let result: Train[]
+        if (!when) {
+          result = await request<Train[]>('/trains')
+        } else {
+          const localDate = new Date().toLocaleDateString('en-CA')
+          const tzOffset = new Date().getTimezoneOffset()
+          result = await request<Train[]>(`/trains?when=${when}&localDate=${localDate}&tzOffset=${tzOffset}`)
+        }
+        if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(result))
+        return result
+      } catch (err) {
+        if (!navigator.onLine && cacheKey) {
+          const cached = localStorage.getItem(cacheKey)
+          if (cached) return JSON.parse(cached) as Train[]
+        }
+        throw err
+      }
     },
     get: (id: string) => request<TrainWithEvents>(`/trains/${id}`),
     lookup: (number: string, date: string) => request<TrainPreview>(`/trains/lookup?number=${encodeURIComponent(number)}&date=${encodeURIComponent(date)}`),
