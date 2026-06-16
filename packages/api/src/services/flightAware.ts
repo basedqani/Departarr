@@ -128,18 +128,22 @@ export async function lookupFlight(
   return generateStubFlight(ident, date)
 }
 
+function nextDay(date: string): string {
+  const d = new Date(date + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().substring(0, 10)
+}
+
 async function lookupFlightAware(ident: string, date: string): Promise<FlightData | null> {
   const apiKey = await getApiKey()
-  const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}&end=${date}`
-  // Count this billable call BEFORE the fetch (so we count even on error)
+  // AeroAPI v4 requires ISO 8601 datetimes and a non-zero window spanning the flight day
+  const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}T00%3A00%3A00Z&end=${nextDay(date)}T06%3A00%3A00Z&max_pages=1`
   await incrementUsage('aeroapi')
-  const res = await fetch(url, {
-    headers: { 'x-apikey': apiKey },
-  })
+  const res = await fetch(url, { headers: { 'x-apikey': apiKey } })
 
   if (!res.ok) {
     const text = await res.text()
-    console.error(`FlightAware error ${res.status}: ${text}`)
+    console.error(`[FlightAware] ${res.status} for ${ident} on ${date}: ${text}`)
     return null
   }
 
@@ -163,7 +167,7 @@ export async function lookupAllFlightLegs(
   if (apiKey) {
     // FlightAware returns multiple entries for different legs in the same call;
     // fetch them all and let the UI pick.
-    const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}&end=${date}`
+    const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}T00%3A00%3A00Z&end=${nextDay(date)}T06%3A00%3A00Z&max_pages=1`
     await incrementUsage('aeroapi')
     try {
       const res = await fetch(url, { headers: { 'x-apikey': apiKey } })
