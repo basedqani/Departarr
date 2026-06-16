@@ -1,0 +1,46 @@
+{
+  "flights": [{
+    "ident": "AA2083",
+    "ident_icao": "AAL2083",
+    "fa_flight_id": "AAL2083-1718000000-airline-0456",
+    "operator": "American Airlines",
+    "operator_icao": "AAL",
+    "flight_number": "2083",
+    "registration": "N123AA",
+    "aircraft_type": "B738",
+    "origin": {
+      "code": "ORD",
+      "code_icao": "KORD",
+      "timezone": "America/Chicago",
+      "name": "Chicago O'Hare International Airport",
+      "city": "Chicago"
+    },
+    "destination": {
+      "code": "LAX",
+      "code_icao": "KLAX",
+      "timezone": "America/Los_Angeles",
+      "name": "Los Angeles International Airport",
+      "city": "Los Angeles"
+    },
+    "gate_orig": "H7",
+    "gate_dest": "43",
+    "terminal_orig": "3",
+    "terminal_dest": "4",
+    "baggage_claim": "5",
+    "scheduled_out": "2024-06-15T18:30:00Z",
+    "estimated_out": "2024-06-15T18:45:00Z",
+    "actual_out": null,
+    "scheduled_off": "2024-06-15T18:50:00Z",
+    "estimated_off": "2024-06-15T19:05:00Z",
+    "actual_off": null,
+    "scheduled_on": "2024-06-15T21:20:00Z",
+    "estimated_on": "2024-06-15T21:35:00Z",
+    "actual_on": null,
+    "scheduled_in": "2024-06-15T21:40:00Z",
+    "estimated_in": "2024-06-15T21:55:00Z",
+    "actual_in": null,
+    "status": "En Route / On Time",
+    "progress_percent": 42,
+    "cancelled": false
+  }]
+}
