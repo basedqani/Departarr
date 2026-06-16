@@ -109,7 +109,7 @@ function computeConnectionBetweenLegs(legA: TripLeg, legB: TripLeg): InlineConne
 
 // If a flight arrives somewhere and the next departs from the same airport
 // within this window it's a connecting itinerary, not separate trips.
-const AUTO_GROUP_MAX_GAP_MS = 8 * 60 * 60 * 1000
+const AUTO_GROUP_MAX_GAP_MS = 4 * 60 * 60 * 1000
 
 function buildAutoItineraries(legs: TripLeg[]): { grouped: AutoItineraryItem[]; remaining: TripLeg[] } {
   const sorted = [...legs].sort((a, b) => a.sortKey - b.sortKey)

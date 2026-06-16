@@ -143,7 +143,7 @@ export const api = {
   },
 
   trips: {
-    list: () => request<Trip[]>('/trips'),
+    list: () => request<TripListItem[]>('/trips'),
     get: (id: string) => request<TripWithLegs>(`/trips/${id}`),
     create: (data: { name: string; startDate?: string; endDate?: string }) =>
       request<Trip>('/trips', { method: 'POST', body: JSON.stringify(data) }),
@@ -291,6 +291,24 @@ export interface Trip {
   startDate: string | null
   endDate: string | null
   createdAt: string
+}
+
+// Leg summary as returned by GET /api/trips (list endpoint)
+export interface TripLegSummary {
+  id: string
+  origin: string
+  destination: string
+  departureScheduled: string
+  arrivalScheduled: string
+  arrivalEstimated: string | null
+  arrivalActual: string | null
+  status: string
+}
+
+// Trip as returned by GET /api/trips (includes summarised legs)
+export interface TripListItem extends Trip {
+  flights: (TripLegSummary & { ident: string })[]
+  trains: (TripLegSummary & { trainNumber: string; trainName: string | null })[]
 }
 
 export interface TripWithFlights extends Trip {

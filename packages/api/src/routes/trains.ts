@@ -53,9 +53,15 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
         endOfDay.setHours(23, 59, 59, 999)
       }
       // Belongs to Today if it departs today (local) AND has not yet arrived.
-      // "Has not arrived" = now is before arrival time (actual ?? estimated ??
-      // scheduled) OR status is not arrived. Arrival time is the cutoff so an
-      // en-route train (departed but not arrived) stays on Today.
+      // "Has not arrived" means:
+      //   - If arrivalActual is set → use it as ground truth; only show if
+      //     arrivalActual > now.
+      //   - If arrivalActual is null and arrivalEstimated is set → show if
+      //     arrivalEstimated > now.
+      //   - If both are null → show if arrivalScheduled > now.
+      //   - Status check: only use "not in arrived statuses" as a fallback when
+      //     NO arrival times are set at all; do NOT let a stale status override
+      //     an arrivalActual that has already passed.
       where = {
         ...where,
         departureScheduled: { gte: startOfDay, lte: endOfDay },
@@ -63,7 +69,8 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
           { arrivalActual: { gt: now } },
           { arrivalActual: null, arrivalEstimated: { gt: now } },
           { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { gt: now } },
-          { status: { notIn: arrivedStatuses } },
+          // Only treat status as authoritative when no arrival timestamps exist yet
+          { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: null, status: { notIn: arrivedStatuses } },
         ],
       }
     } else if (when === 'upcoming') {

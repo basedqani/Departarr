@@ -28,14 +28,16 @@ export async function tripRoutes(app: FastifyInstance): Promise<void> {
           orderBy: { departureScheduled: 'asc' },
           select: {
             id: true, ident: true, origin: true, destination: true,
-            departureScheduled: true, arrivalScheduled: true, status: true,
+            departureScheduled: true, arrivalScheduled: true,
+            arrivalEstimated: true, arrivalActual: true, status: true,
           },
         },
         trains: {
           orderBy: { departureScheduled: 'asc' },
           select: {
             id: true, trainNumber: true, trainName: true, origin: true, destination: true,
-            departureScheduled: true, arrivalScheduled: true, status: true,
+            departureScheduled: true, arrivalScheduled: true,
+            arrivalEstimated: true, arrivalActual: true, status: true,
           },
         },
       },

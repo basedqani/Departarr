@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { api } from '../lib/api'
+import { api, type TripListItem } from '../lib/api'
 import { FlightCard } from '../components/FlightCard'
 import { TrainCard } from '../components/TrainCard'
 import { ConnectionBadge } from '../components/ConnectionBadge'
@@ -195,10 +195,33 @@ export function UpcomingPage(): React.ReactElement {
     refetchInterval: 120_000,
   })
 
-  const { data: trips } = useQuery({
+  const { data: allTrips } = useQuery({
     queryKey: ['trips'],
     queryFn: api.trips.list,
   })
+
+  const arrivedStatuses = ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled']
+
+  // Only show trips that are not fully complete (i.e. at least one leg has not
+  // yet arrived). A trip is "done" when every leg's best arrival time
+  // (actual ?? estimated ?? scheduled) is in the past AND/OR its status is in
+  // the arrived set. Empty trips (no legs) are always shown so the user can add.
+  function isTripActive(trip: TripListItem): boolean {
+    const now = Date.now()
+    const allLegs = [
+      ...trip.flights.map(f => ({ arrivalActual: f.arrivalActual, arrivalEstimated: f.arrivalEstimated, arrivalScheduled: f.arrivalScheduled, status: f.status })),
+      ...trip.trains.map(t => ({ arrivalActual: t.arrivalActual, arrivalEstimated: t.arrivalEstimated, arrivalScheduled: t.arrivalScheduled, status: t.status })),
+    ]
+    if (allLegs.length === 0) return true // empty trip — keep visible
+    return allLegs.some(leg => {
+      if (arrivedStatuses.includes(leg.status)) return false
+      const bestArrival = leg.arrivalActual ?? leg.arrivalEstimated ?? leg.arrivalScheduled
+      if (!bestArrival) return true // no arrival info → assume not arrived
+      return new Date(bestArrival).getTime() > now
+    })
+  }
+
+  const trips = allTrips?.filter(isTripActive)
 
   const { data: connections } = useQuery({
     queryKey: ['connections'],
