@@ -102,7 +102,7 @@ vi.mock('../../lib/prisma.js', () => ({
   },
 }))
 
-import { syncCalendarForUser } from '../googleCalendar.js'
+import { syncCalendarForUser, resolveBoardingStop } from '../googleCalendar.js'
 import { detectTrainsInText } from '../trainDetector.js'
 
 const FUTURE = '2026-12-01'
@@ -205,5 +205,40 @@ describe('CAL-8 platform number is not a train number', () => {
   it('still extracts a genuine adjacent/keyword train number', () => {
     expect(detectTrainsInText('Empire Builder 8 to Chicago')[0]?.trainNumber).toBe('8')
     expect(detectTrainsInText('Empire Builder (Train #8)')[0]?.trainNumber).toBe('8')
+  })
+})
+
+describe('resolveBoardingStop — address beats time', () => {
+  // Empire Builder #8: originates Seattle, the user boards at St. Paul (MSP).
+  const schedule = {
+    origin: 'SEA',
+    originName: 'Seattle',
+    departureScheduled: new Date('2026-06-26T02:55:00Z'),
+    stops: [
+      { code: 'SEA', name: 'Seattle', schDep: '2026-06-26T02:55:00Z' },
+      { code: 'MOT', name: 'Minot', schDep: '2026-06-27T08:45:00Z' },
+      { code: 'MSP', name: 'St. Paul', schDep: '2026-06-27T13:50:00Z' }, // 8:50 AM CDT
+      { code: 'CHI', name: 'Chicago', schArr: '2026-06-27T20:45:00Z' },
+    ],
+  }
+
+  it('uses the address-detected stop (MSP) and anchors departure to its scheduled instant', () => {
+    // boardingStation='MSP' came from the event location "240 Kellogg Blvd, Saint Paul".
+    const r = resolveBoardingStop(schedule, 'MSP', '2026-06-27T08:50:00-05:00', '8')
+    expect(r.origin).toBe('MSP')
+    expect(r.departureScheduled.toISOString()).toBe('2026-06-27T13:50:00.000Z')
+  })
+
+  it('address wins even when the event time is mis-zoned (would otherwise mis-match a stop)', () => {
+    // Event stored as floating/UTC 08:50 — the time matcher alone would drift to
+    // Minot (08:45Z). Address detection must still pin MSP.
+    const r = resolveBoardingStop(schedule, 'MSP', '2026-06-27T08:50:00Z', '8')
+    expect(r.origin).toBe('MSP')
+    expect(r.departureScheduled.toISOString()).toBe('2026-06-27T13:50:00.000Z')
+  })
+
+  it('falls back to the closest stop by time when no address match', () => {
+    const r = resolveBoardingStop(schedule, undefined, '2026-06-27T13:50:00Z', '8')
+    expect(r.origin).toBe('MSP')
   })
 })

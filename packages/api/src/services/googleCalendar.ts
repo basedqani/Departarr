@@ -10,6 +10,80 @@ import type { FastifyRequest } from 'fastify'
 type CalendarTime = { date?: string | null; dateTime?: string | null }
 type CalendarEventLike = { start?: CalendarTime | null; end?: CalendarTime | null }
 
+export interface BoardingStopInput {
+  origin: string
+  originName?: string | null
+  departureScheduled: Date
+  stops: Array<{ code: string; name: string; schDep?: string | null; schArr?: string | null }>
+}
+export interface BoardingResolution {
+  origin: string
+  originName: string | null
+  departureScheduled: Date
+}
+
+/**
+ * Decide which stop the user actually boards at for an auto-detected train.
+ *
+ * Precedence (most reliable first):
+ *  1. ADDRESS — the calendar event's location maps to a concrete station code
+ *     (e.g. "240 Kellogg Blvd, Saint Paul" → MSP). The booking venue *is* the
+ *     boarding stop, so it wins outright. We anchor the departure to that stop's
+ *     canonical scheduled instant, not the raw event time (which can be mis-zoned).
+ *  2. TIME — no usable address match → pick the stop whose scheduled instant is
+ *     closest to the event start (within 90 min).
+ *  3. Otherwise keep the route origin, trusting the event's own start time.
+ *
+ * Returning address-first fixes the bug where a mis-zoned event time made the
+ * time matcher pick a wrong mid-route stop and suppress the reliable address match.
+ */
+export function resolveBoardingStop(
+  schedule: BoardingStopInput,
+  boardingStation: string | undefined,
+  eventStartDateTime: string | undefined,
+  trainNumberForLog = '',
+): BoardingResolution {
+  let origin = schedule.origin
+  let originName = schedule.originName ?? null
+  let departureScheduled = schedule.departureScheduled
+
+  const addressStop = boardingStation
+    ? schedule.stops.find(s => s.code.toUpperCase() === boardingStation.toUpperCase())
+    : undefined
+
+  if (addressStop) {
+    origin = addressStop.code
+    originName = addressStop.name
+    const iso = addressStop.schDep ?? addressStop.schArr
+    if (iso) departureScheduled = new Date(iso)
+    console.log(`[calendar] Train ${trainNumberForLog}: address-based boarding → ${origin} (${originName})`)
+  } else if (eventStartDateTime) {
+    const eventMs = new Date(eventStartDateTime).getTime()
+    let bestStop = schedule.stops[0]
+    let bestDiff = Infinity
+    for (const stop of schedule.stops) {
+      const iso = stop.schDep ?? stop.schArr
+      if (!iso) continue
+      const diff = Math.abs(new Date(iso).getTime() - eventMs)
+      if (diff < bestDiff) {
+        bestDiff = diff
+        bestStop = stop
+      }
+    }
+    if (bestStop && bestDiff <= 90 * 60 * 1000 && bestStop.code !== schedule.origin) {
+      origin = bestStop.code
+      originName = bestStop.name
+      const iso = bestStop.schDep ?? bestStop.schArr
+      if (iso) departureScheduled = new Date(iso)
+      console.log(`[calendar] Train ${trainNumberForLog}: time-based boarding → ${origin} (${originName}), diff ${Math.round(bestDiff / 60000)}min`)
+    } else {
+      departureScheduled = new Date(eventStartDateTime)
+    }
+  }
+
+  return { origin, originName, departureScheduled }
+}
+
 /**
  * Returns true if the event is already entirely in the past — i.e. its arrival
  * (end) time, or start time when there's no end, is before now. We do NOT import
@@ -453,60 +527,12 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                 continue
               }
 
-              let origin = schedule.origin
-              let originName = schedule.originName ?? null
-              let departureScheduled = schedule.departureScheduled
-
-              // The event's startDateTime is the most reliable signal for which stop
-              // the user boards at — it comes directly from the Amtrak booking.
-              // Compare the event's UTC timestamp against each stop's UTC time, derived
-              // by adding the stop's GTFS offset from the origin departure time.
-              // This avoids % 24 aliasing bugs with overnight GTFS times (e.g. "47:00:00").
-              const eventStartDateTime = (start as { date?: string; dateTime?: string }).dateTime
-              if (eventStartDateTime) {
-                departureScheduled = new Date(eventStartDateTime)
-
-                const eventMs = new Date(eventStartDateTime).getTime()
-
-                let bestStop = schedule.stops[0]
-                let bestDiff = Infinity
-                for (const stop of schedule.stops) {
-                  // Each stop now carries an absolute ISO instant already computed
-                  // in its own timezone — compare directly, no overflow math.
-                  const iso = stop.schDep ?? stop.schArr
-                  if (!iso) continue
-                  const stopUtcMs = new Date(iso).getTime()
-                  const diff = Math.abs(stopUtcMs - eventMs)
-                  if (diff < bestDiff) {
-                    bestDiff = diff
-                    bestStop = stop
-                  }
-                }
-
-                // Accept the time-based match if within 90 min and not already the route origin
-                if (bestDiff <= 90 * 60 * 1000 && bestStop.code !== schedule.origin) {
-                  origin = bestStop.code
-                  originName = bestStop.name
-                  console.log(`[calendar] Train ${detected.trainNumber}: time-based boarding → ${origin} (${originName}), diff ${Math.round(bestDiff / 60000)}min`)
-                }
-              }
-
-              // Fallback: text-based boarding station detection (catches cases where
-              // there's no dateTime on the event, e.g. all-day events)
-              if (origin === schedule.origin && detected.boardingStation && detected.boardingStation !== schedule.origin) {
-                const boardingStop = schedule.stops.find(
-                  s => s.code.toUpperCase() === detected.boardingStation!.toUpperCase()
-                )
-                if (boardingStop) {
-                  origin = boardingStop.code
-                  originName = boardingStop.name
-                  const boardingIso = boardingStop.schDep ?? boardingStop.schArr
-                  if (boardingIso) {
-                    departureScheduled = new Date(boardingIso)
-                  }
-                  console.log(`[calendar] Train ${detected.trainNumber}: text-based boarding → ${origin} (${originName})`)
-                }
-              }
+              const { origin, originName, departureScheduled } = resolveBoardingStop(
+                schedule,
+                detected.boardingStation,
+                (start as { date?: string; dateTime?: string }).dateTime,
+                detected.trainNumber,
+              )
 
               await prisma.train.create({
                 data: {
