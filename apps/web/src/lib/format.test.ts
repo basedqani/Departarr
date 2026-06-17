@@ -46,6 +46,13 @@ describe('getAmtrakStationTz', () => {
     expect(getAmtrakStationTz('NYP')).toBe('America/New_York')
   })
 
+  it('resolves St. Paul (MSP) to Central — must match the backend map, not fall to UTC', () => {
+    // Regression: MSP was missing from the frontend map, so St. Paul train
+    // times rendered in UTC instead of CDT.
+    expect(getAmtrakStationTz('MSP')).toBe('America/Chicago')
+    expect(getAmtrakStationTz('JAX')).toBe('America/New_York') // was wrongly Central
+  })
+
   it('returns null for an unknown code — NEVER the machine timezone', () => {
     expect(getAmtrakStationTz('XXX')).toBeNull()
     expect(getAmtrakStationTz('XXX')).not.toBe(MACHINE_TZ)

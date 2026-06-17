@@ -75,10 +75,10 @@ export function AddFlightPage(): React.ReactElement {
   const queryClient = useQueryClient()
   const [mode, setMode] = useState<AddMode>('flight')
   const [ident, setIdent] = useState('')
-  const [date, setDate] = useState(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })
+  // Empty by default: a blank flight date means "find the next occurrence"; a
+  // value means "find this exact date" (honoured, never overridden). Trains
+  // always need a date (GTFS lookup is date-specific).
+  const [date, setDate] = useState('')
   // The date the user actually picked for a flight (set from the upcoming list).
   // Distinct from the optional `date` form field, which only seeds train lookup.
   const [selectedDate, setSelectedDate] = useState('')
@@ -103,6 +103,10 @@ export function AddFlightPage(): React.ReactElement {
     setLooking(true)
     try {
       if (mode === 'train') {
+        if (!date) {
+          setError('Pick the travel date for your train.')
+          return
+        }
         const tp = await api.trains.lookup(ident.trim(), date)
         setTrainPreview(tp)
         setBoardingStopCode(tp.origin)
@@ -110,8 +114,23 @@ export function AddFlightPage(): React.ReactElement {
         setStep('confirm')
       } else {
         const clean = ident.toUpperCase().replace(/\s+/g, '')
-        // ADD-2/ADD-3: primary action finds the flight by number across the next
-        // week — no hard-bound single date. The user then picks a date.
+        if (date) {
+          // The user picked a specific date — honour it exactly, never override
+          // with the nearest occurrence. Looks up only that calendar day.
+          const { provider, legs } = await api.flights.lookupAll(clean, date)
+          setProvider(provider)
+          setSelectedDate(date)
+          if (legs.length === 1) {
+            setPreview(legs[0])
+            setStep('confirm')
+          } else {
+            setLegs(sortLegsByTime(legs))
+            setStep('pick-leg')
+          }
+          return
+        }
+        // ADD-2/ADD-3: no date given → find the next occurrence across the next
+        // week. The user then picks which date.
         const result = await api.flights.lookupUpcoming(clean)
         setProvider(result.provider)
         const occ = result.occurrences

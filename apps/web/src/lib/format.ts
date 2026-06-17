@@ -1,6 +1,8 @@
 import { getAirport } from './airports'
 
 // ─── Amtrak station → IANA timezone ─────────────────────────────────────────
+// NOTE: must stay in sync with the backend AMTRAK_STATION_TZ in
+// packages/api/src/data/amtrakStations.ts — this is the display-side mirror.
 const AMTRAK_TZ: Record<string, string> = {
   // Eastern
   NYP: 'America/New_York', WAS: 'America/New_York', PHL: 'America/New_York',
@@ -18,15 +20,15 @@ const AMTRAK_TZ: Record<string, string> = {
   DET: 'America/New_York', ANN: 'America/New_York', KAL: 'America/New_York',
   BTL: 'America/New_York', ETG: 'America/New_York', FLN: 'America/New_York',
   JAC: 'America/New_York', SAV: 'America/New_York', FLO: 'America/New_York',
-  MIA: 'America/New_York', TPA: 'America/New_York',
+  MIA: 'America/New_York', TPA: 'America/New_York', JAX: 'America/New_York',
   // Central
   CHI: 'America/Chicago', MCI: 'America/Chicago', STL: 'America/Chicago',
-  CHM: 'America/Chicago', MSD: 'America/Chicago',
+  CHM: 'America/Chicago', MSD: 'America/Chicago', MSP: 'America/Chicago',
   WNO: 'America/Chicago', LCR: 'America/Chicago', TOM: 'America/Chicago',
-  MKE: 'America/Chicago', NOL: 'America/Chicago', JAX: 'America/Chicago',
-  SPI: 'America/Chicago', OKC: 'America/Chicago', TOP: 'America/Chicago',
-  LNK: 'America/Chicago', OMA: 'America/Chicago', AUS: 'America/Chicago',
-  SAT: 'America/Chicago', FTW: 'America/Chicago', DAL: 'America/Chicago',
+  MKE: 'America/Chicago', NOL: 'America/Chicago', SPI: 'America/Chicago',
+  OKC: 'America/Chicago', TOP: 'America/Chicago', LNK: 'America/Chicago',
+  OMA: 'America/Chicago', AUS: 'America/Chicago', SAT: 'America/Chicago',
+  FTW: 'America/Chicago', DAL: 'America/Chicago',
   // Mountain
   DEN: 'America/Denver', GJT: 'America/Denver', GLW: 'America/Denver',
   SLC: 'America/Denver', OGD: 'America/Denver', ELP: 'America/Denver',
@@ -41,8 +43,6 @@ const AMTRAK_TZ: Record<string, string> = {
   OXN: 'America/Los_Angeles', LAX: 'America/Los_Angeles', FUL: 'America/Los_Angeles',
   ANA: 'America/Los_Angeles', SNA: 'America/Los_Angeles', OSD: 'America/Los_Angeles',
   SAN: 'America/Los_Angeles', RNO: 'America/Los_Angeles', SPK: 'America/Los_Angeles',
-  // Nevada
-  EMY2: 'America/Los_Angeles',
 }
 
 /**

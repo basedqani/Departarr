@@ -23,7 +23,20 @@ async function request<T>(
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers })
+  // Guard against a hung server: without a timeout a stalled request leaves the
+  // UI spinning forever (the "Loading flights…" that never resolves). Abort
+  // after 20s so the query surfaces an error and react-query can retry.
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 30_000)
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal })
+  } catch (err) {
+    if (controller.signal.aborted) throw new Error('Request timed out — the server took too long to respond.')
+    throw err
+  } finally {
+    clearTimeout(timeout)
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
     throw new Error(body.error ?? `HTTP ${res.status}`)
