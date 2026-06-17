@@ -299,7 +299,7 @@ function StopTimeline({ stops, originTz }: { stops: TrainStop[]; originTz: strin
                   )}
                   {!actTime && schTime && (
                     <div className="event-time" style={{ color: 'var(--text-muted)' }}>
-                      {schTime.substring(0, 5)}
+                      {fmtTime(schTime, stop.tz ?? stopTz)}
                     </div>
                   )}
                 </div>
