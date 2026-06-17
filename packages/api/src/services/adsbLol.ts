@@ -180,6 +180,27 @@ export function hasLiftedOff(pos: AdsbPosition): boolean {
 }
 
 /**
+ * DE-7: A single ADS-B sample qualifies as an on-ground "landing" candidate
+ * only when the aircraft reports on-ground AND is within `proximityKm` of the
+ * destination coordinates. This replaces the old `onGround || altitudeFt < 500`
+ * false-positive that fired for overflights and high-elevation airports (DEN).
+ *
+ * Callers must still require TWO consecutive qualifying samples before marking
+ * the flight as arrived (debounce).
+ */
+export function isLandedSample(
+  pos: AdsbPosition,
+  destLat: number,
+  destLon: number,
+  proximityKm: number,
+): boolean {
+  if (!pos.onGround) return false
+  if (pos.latitude == null || pos.longitude == null) return false
+  const distKm = haversineKm(pos.latitude, pos.longitude, destLat, destLon)
+  return distKm <= proximityKm
+}
+
+/**
  * Haversine great-circle distance in kilometres between two lat/lon points.
  *
  * @param lat1 Latitude of point A in decimal degrees
