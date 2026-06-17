@@ -10,6 +10,12 @@ import { describe, it, expect } from 'vitest'
 
 const ARRIVED_STATUSES = ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled']
 
+// Statuses meaning "in the air / departed but not yet arrived". GEN-2: a leg in
+// one of these states is genuinely en-route and must stay visible on Today even
+// if it took off on a previous calendar day. A plain "scheduled" status that
+// happens to have a past departure time is stale data, not a live flight.
+const AIRBORNE_STATUSES = ['departed', 'en_route', 'en-route', 'at-station', 'Departed', 'En-Route']
+
 // ─── Today filter helpers (pure logic extracted from the Prisma WHERE clause) ──
 
 interface LegTimestamps {
@@ -25,20 +31,30 @@ interface LegTimestamps {
  * Mirrors the OR clause in flights.ts / trains.ts when=today.
  */
 function isTodayLeg(leg: LegTimestamps, startOfDay: Date, endOfDay: Date, now: Date): boolean {
-  // Must depart today (local)
+  const bestArrival = leg.arrivalActual ?? leg.arrivalEstimated ?? leg.arrivalScheduled
+  const arrived = bestArrival !== null ? bestArrival <= now : ARRIVED_STATUSES.includes(leg.status)
+
+  // ── GEN-2: a genuinely airborne leg (in-air status, not yet arrived) lives on
+  // Today regardless of which calendar day it departed — otherwise a red-eye
+  // that took off yesterday and is still flying would vanish from every view.
+  if (AIRBORNE_STATUSES.includes(leg.status) && !arrived) return true
+
+  // Otherwise it must depart today (local) to be on Today.
   if (leg.departureScheduled < startOfDay || leg.departureScheduled > endOfDay) return false
 
-  // Must not have arrived yet
-  if (leg.arrivalActual !== null) {
-    return leg.arrivalActual > now
+  // Departs today and has not yet arrived → keep (pre-flight or en-route).
+  if (!arrived) return true
+
+  // ── R-1: departed today and already arrived. Real trackers keep today's
+  // completed flights on Today until end of the local day, but only when the
+  // arrival is *confirmed* — a terminal status (landed/arrived/cancelled) with a
+  // real arrival timestamp inside today's local window. A stale "scheduled"
+  // status whose arrival timestamp has merely passed is treated as gone.
+  if (bestArrival !== null) {
+    const confirmed = ARRIVED_STATUSES.includes(leg.status)
+    return confirmed && bestArrival >= startOfDay && bestArrival <= endOfDay
   }
-  if (leg.arrivalEstimated !== null) {
-    return leg.arrivalEstimated > now
-  }
-  if (leg.arrivalScheduled !== null) {
-    return leg.arrivalScheduled > now
-  }
-  // No arrival timestamps at all — fall back to status
+  // No arrival timestamps at all — fall back to status.
   return !ARRIVED_STATUSES.includes(leg.status)
 }
 
@@ -47,10 +63,14 @@ function isTodayLeg(leg: LegTimestamps, startOfDay: Date, endOfDay: Date, now: D
  * Mirrors the OR clause in flights.ts / trains.ts when=past.
  */
 function isPastLeg(leg: LegTimestamps, now: Date): boolean {
+  // A terminal status (landed/arrived/cancelled) is authoritative — e.g. a
+  // cancelled flight with no arrival timestamps belongs in Past even if its
+  // scheduled arrival is still in the future.
+  if (ARRIVED_STATUSES.includes(leg.status)) return true
   if (leg.arrivalActual !== null) return leg.arrivalActual <= now
   if (leg.arrivalEstimated !== null) return leg.arrivalEstimated <= now
   if (leg.arrivalScheduled !== null) return leg.arrivalScheduled <= now
-  return ARRIVED_STATUSES.includes(leg.status)
+  return false
 }
 
 /**
@@ -188,14 +208,19 @@ describe('Today filter — isTodayLeg', () => {
   })
 
   it('keeps a flight with status "scheduled" and no arrival timestamps (pre-flight)', () => {
+    // Fixed mid-day "now" so a +N-hour departure never spills past midnight.
+    const fixedNow = new Date()
+    fixedNow.setHours(9, 0, 0, 0)
+    const depToday = new Date()
+    depToday.setHours(11, 0, 0, 0)
     const leg: LegTimestamps = {
-      departureScheduled: hoursFromNow(2),
+      departureScheduled: depToday,
       arrivalScheduled: null,
       arrivalEstimated: null,
       arrivalActual: null,
       status: 'scheduled',
     }
-    expect(isTodayLeg(leg, start, end, now)).toBe(true)
+    expect(isTodayLeg(leg, start, end, fixedNow)).toBe(true)
   })
 
   it('does not show a flight departing yesterday', () => {
@@ -209,6 +234,58 @@ describe('Today filter — isTodayLeg', () => {
       status: 'scheduled',
     }
     expect(isTodayLeg(leg, start, end, now)).toBe(false)
+  })
+
+  it('R-1: keeps a flight that LANDED earlier today on Today until end of local day', () => {
+    // Departed and landed earlier today; arrivalActual is in the past but within
+    // today's window and status is a confirmed terminal status.
+    const earlyToday = new Date()
+    earlyToday.setHours(6, 0, 0, 0)
+    const landedToday = new Date()
+    landedToday.setHours(9, 0, 0, 0)
+    const leg: LegTimestamps = {
+      departureScheduled: earlyToday,
+      arrivalScheduled: landedToday,
+      arrivalEstimated: null,
+      arrivalActual: landedToday, // landed at 9am today
+      status: 'landed',
+    }
+    // Only meaningful once 'now' is past the landing time.
+    if (landedToday <= now) {
+      expect(isTodayLeg(leg, start, end, now)).toBe(true)
+    }
+  })
+
+  it('R-1: keeps a cancelled flight scheduled for today on Today', () => {
+    // Use a fixed mid-day "now" so the assertion is independent of wall-clock.
+    const fixedNow = new Date()
+    fixedNow.setHours(12, 0, 0, 0)
+    const depToday = new Date()
+    depToday.setHours(15, 0, 0, 0)
+    const arrToday = new Date()
+    arrToday.setHours(18, 0, 0, 0)
+    const leg: LegTimestamps = {
+      departureScheduled: depToday,
+      arrivalScheduled: arrToday,
+      arrivalEstimated: null,
+      arrivalActual: null,
+      status: 'cancelled',
+    }
+    expect(isTodayLeg(leg, start, end, fixedNow)).toBe(true)
+  })
+
+  it('GEN-2: keeps an en-route flight that departed YESTERDAY and is still airborne', () => {
+    // Red-eye that took off yesterday, lands later today — must remain visible
+    // on Today even though its departure calendar day is not today.
+    const yesterday = new Date(now.getTime() - 20 * 60 * 60 * 1000)
+    const leg: LegTimestamps = {
+      departureScheduled: yesterday,
+      arrivalScheduled: hoursFromNow(2), // still in the air, lands in 2h
+      arrivalEstimated: null,
+      arrivalActual: null,
+      status: 'en-route',
+    }
+    expect(isTodayLeg(leg, start, end, now)).toBe(true)
   })
 
   it('keeps an en-route flight that departed today but arrives tomorrow', () => {

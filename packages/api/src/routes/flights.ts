@@ -46,6 +46,18 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     let where: Record<string, unknown> = { userId }
 
     const arrivedStatuses = ['landed', 'arrived', 'cancelled', 'Landed', 'Arrived', 'Cancelled']
+    // In-air statuses: a leg in one of these has departed but not yet arrived and
+    // must stay on Today regardless of which calendar day it took off (GEN-2).
+    const airborneStatuses = ['departed', 'en_route', 'en-route', 'at-station', 'Departed', 'En-Route']
+
+    // GEN-11: reject malformed tz params instead of silently producing NaN
+    // boundaries (which makes every comparison false and empties the view).
+    if (localDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
+      return reply.code(400).send({ error: 'Invalid localDate' })
+    }
+    if (tzOffset !== undefined && Number.isNaN(parseInt(tzOffset, 10))) {
+      return reply.code(400).send({ error: 'Invalid tzOffset' })
+    }
 
     if (when === 'today') {
       // Compute start/end of the client's local calendar day in UTC.
@@ -65,25 +77,44 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
         endOfDay = new Date(now)
         endOfDay.setHours(23, 59, 59, 999)
       }
-      // An item belongs to Today if its departure date is today (local) AND it
-      // has not yet arrived. "Has not arrived" means:
-      //   - If arrivalActual is set → we use it as ground truth; only show if
-      //     arrivalActual > now (flight is still en-route to gate).
-      //   - If arrivalActual is null and arrivalEstimated is set → show if
-      //     arrivalEstimated > now.
-      //   - If both are null → show if arrivalScheduled > now.
-      //   - Status check: only use "not in arrived statuses" as a fallback when
-      //     NO arrival times are set at all; do NOT let a stale "scheduled"
-      //     status override an arrivalActual that has already passed.
+      // "Has not yet arrived" — actual ?? estimated ?? scheduled is still in the
+      // future, or (no timestamps) status isn't terminal. Stale statuses never
+      // override a real arrival timestamp.
+      const notYetArrived = [
+        { arrivalActual: { gt: now } },
+        { arrivalActual: null, arrivalEstimated: { gt: now } },
+        { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { gt: now } },
+        { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: null, status: { notIn: arrivedStatuses } },
+      ]
+      // A leg belongs to Today if EITHER:
+      //   • GEN-2: it is genuinely airborne (in-air status) and not yet arrived —
+      //     stays visible even if it departed on a previous calendar day; OR
+      //   • it departs today (local) AND (it has not yet arrived OR — R-1 —
+      //     it arrived earlier today with a confirmed terminal status, so a
+      //     flight that landed earlier today stays on Today until end of day).
       where = {
         ...where,
-        departureScheduled: { gte: startOfDay, lte: endOfDay },
         OR: [
-          { arrivalActual: { gt: now } },
-          { arrivalActual: null, arrivalEstimated: { gt: now } },
-          { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { gt: now } },
-          // Only treat status as authoritative when no arrival timestamps exist yet
-          { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: null, status: { notIn: arrivedStatuses } },
+          // GEN-2 — airborne, not yet arrived, any departure day
+          { AND: [{ status: { in: airborneStatuses } }, { OR: notYetArrived }] },
+          // Departs today, not yet arrived
+          { AND: [{ departureScheduled: { gte: startOfDay, lte: endOfDay } }, { OR: notYetArrived }] },
+          // R-1 — departs today and arrived earlier today with a terminal status
+          {
+            AND: [
+              { departureScheduled: { gte: startOfDay, lte: endOfDay } },
+              { status: { in: arrivedStatuses } },
+              {
+                OR: [
+                  { arrivalActual: { gte: startOfDay, lte: endOfDay } },
+                  { arrivalActual: null, arrivalEstimated: { gte: startOfDay, lte: endOfDay } },
+                  { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: { gte: startOfDay, lte: endOfDay } },
+                  // Cancelled-but-no-arrival-timestamp scheduled for today
+                  { arrivalActual: null, arrivalEstimated: null, arrivalScheduled: null },
+                ],
+              },
+            ],
+          },
         ],
       }
     } else if (when === 'upcoming') {

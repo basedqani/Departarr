@@ -58,6 +58,13 @@ export function analyseConnections(flights: Flight[]): ConnectionResult[] {
       (departureTime.getTime() - arrivalTime.getTime()) / 60_000
     )
 
+    // GEN-1: only pair legs that form a plausible single connection. Skip
+    // negative gaps (next departs before this arrives — not a connection) and
+    // gaps longer than a realistic layover, otherwise two same-hub flights days
+    // or weeks apart would be reported as a "connection".
+    const MAX_LAYOVER_MIN = 6 * 60
+    if (minutesAvailable < 0 || minutesAvailable > MAX_LAYOVER_MIN) continue
+
     // Same terminal = both terminals are non-null and equal
     const sameTerminal =
       legN.terminalArrival !== null &&

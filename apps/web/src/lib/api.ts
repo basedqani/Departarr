@@ -153,6 +153,8 @@ export const api = {
       request<void>(`/trips/${id}`, { method: 'DELETE' }),
     addFlight: (tripId: string, flightId: string) =>
       request<Flight>(`/trips/${tripId}/flights`, { method: 'POST', body: JSON.stringify({ flightId }) }),
+    addTrain: (tripId: string, trainId: string) =>
+      request<Train>(`/trips/${tripId}/trains`, { method: 'POST', body: JSON.stringify({ trainId }) }),
   },
 
   share: {
@@ -179,7 +181,7 @@ export const api = {
   },
 
   settings: {
-    get: () => request<Record<string, string | null>>('/settings'),
+    get: () => request<SettingsResponse>('/settings'),
     set: (key: string, value: string) =>
       request<{ ok: boolean }>('/settings', { method: 'PUT', body: JSON.stringify({ key, value }) }),
   },
@@ -187,6 +189,20 @@ export const api = {
   features: {
     get: () => request<Features>('/features'),
   },
+}
+
+// GET /api/settings (admin). Recognised keys come back as masked strings,
+// booleans (for BOOL_KEYS), or null when unset, plus a read-only usage summary.
+export interface AeroApiUsage {
+  month: string
+  provider: string
+  calls: number
+  budget: number
+}
+
+export interface SettingsResponse {
+  aeroapi_usage?: AeroApiUsage
+  [key: string]: string | boolean | null | AeroApiUsage | undefined
 }
 
 export interface Features {
