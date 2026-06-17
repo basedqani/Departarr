@@ -2,12 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { api, type FlightPreview, type TrainPreview } from '../lib/api'
+import { api, type FlightPreview, type TrainPreview, type UpcomingOccurrence, type ProviderId } from '../lib/api'
 import { getAirport } from '../lib/airports'
-import { formatLocalTime, getAirportTz, getAmtrakStationTz } from '../lib/format'
+import { formatTimeInZone, getAirportTz, getAmtrakStationTz, formatRelativeDayInZone } from '../lib/format'
 import { StatusBadge } from '../components/StatusBadge'
 
-type Step = 'form' | 'pick-leg' | 'confirm'
+type Step = 'form' | 'pick-date' | 'pick-leg' | 'confirm'
 type AddMode = 'flight' | 'train'
 
 /** Format a stop's absolute ISO time in its own timezone as HH:MM (24h). */
@@ -38,6 +38,38 @@ function TrainIconBtn(): React.ReactElement {
   )
 }
 
+/** Sort legs by departure time, closest to now first. */
+function sortLegsByTime(legs: FlightPreview[]): FlightPreview[] {
+  const now = Date.now()
+  return [...legs].sort((a, b) => {
+    const aTime = new Date(a.departureEstimated ?? a.departureScheduled).getTime()
+    const bTime = new Date(b.departureEstimated ?? b.departureScheduled).getTime()
+    return Math.abs(aTime - now) - Math.abs(bTime - now)
+  })
+}
+
+/**
+ * ADD-7: turn a lookup failure into a clear, differentiated message. The server
+ * distinguishes 404 (not found) from over-budget and network errors via the
+ * thrown Error message, so we can hint "try another date" only when it helps.
+ */
+function describeLookupError(err: unknown, mode: AddMode): string {
+  const msg = err instanceof Error ? err.message : ''
+  const lower = msg.toLowerCase()
+  if (!navigator.onLine || lower.includes('failed to fetch') || lower.includes('networkerror')) {
+    return 'Network problem — check your connection and try again.'
+  }
+  if (lower.includes('budget') || lower.includes('quota') || msg.includes('429')) {
+    return 'Live data is over its monthly budget right now. Try again later.'
+  }
+  if (lower.includes('no upcoming') || lower.includes('not found') || msg.includes('404')) {
+    return mode === 'train'
+      ? 'Could not find that train. Double-check the number and date.'
+      : "Couldn't find that flight in the next 7 days. Check the flight number, or try a specific date."
+  }
+  return msg || (mode === 'train' ? 'Could not find that train' : 'Could not find that flight')
+}
+
 export function AddFlightPage(): React.ReactElement {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -47,12 +79,17 @@ export function AddFlightPage(): React.ReactElement {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
+  // The date the user actually picked for a flight (set from the upcoming list).
+  // Distinct from the optional `date` form field, which only seeds train lookup.
+  const [selectedDate, setSelectedDate] = useState('')
   const [tripId, setTripId] = useState('')
   const [error, setError] = useState('')
   const [looking, setLooking] = useState(false)
   const [adding, setAdding] = useState(false)
   const [step, setStep] = useState<Step>('form')
   const [legs, setLegs] = useState<FlightPreview[]>([])
+  const [occurrences, setOccurrences] = useState<UpcomingOccurrence[]>([])
+  const [provider, setProvider] = useState<ProviderId | null>(null)
   const [preview, setPreview] = useState<FlightPreview | null>(null)
   const [trainPreview, setTrainPreview] = useState<TrainPreview | null>(null)
   const [boardingStopCode, setBoardingStopCode] = useState<string>('')
@@ -73,26 +110,41 @@ export function AddFlightPage(): React.ReactElement {
         setStep('confirm')
       } else {
         const clean = ident.toUpperCase().replace(/\s+/g, '')
-        const results = await api.flights.lookupAll(clean, date)
-        if (results.length === 1) {
-          setPreview(results[0])
+        // ADD-2/ADD-3: primary action finds the flight by number across the next
+        // week — no hard-bound single date. The user then picks a date.
+        const result = await api.flights.lookupUpcoming(clean)
+        setProvider(result.provider)
+        const occ = result.occurrences
+        // Single date + single leg → straight to confirm.
+        if (occ.length === 1 && occ[0].legs.length === 1) {
+          setSelectedDate(occ[0].date)
+          setPreview(occ[0].legs[0])
           setStep('confirm')
-        } else {
-          // Sort legs by departure time, closest to now first
-          const now = Date.now()
-          const sorted = [...results].sort((a, b) => {
-            const aTime = new Date(a.departureEstimated ?? a.departureScheduled).getTime()
-            const bTime = new Date(b.departureEstimated ?? b.departureScheduled).getTime()
-            return Math.abs(aTime - now) - Math.abs(bTime - now)
-          })
-          setLegs(sorted)
+        } else if (occ.length === 1) {
+          // One date, multiple legs → leg picker.
+          setSelectedDate(occ[0].date)
+          setLegs(sortLegsByTime(occ[0].legs))
           setStep('pick-leg')
+        } else {
+          setOccurrences(occ)
+          setStep('pick-date')
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : mode === 'train' ? 'Could not find that train' : 'Could not find that flight')
+      setError(describeLookupError(err, mode))
     } finally {
       setLooking(false)
+    }
+  }
+
+  function handlePickDate(occ: UpcomingOccurrence): void {
+    setSelectedDate(occ.date)
+    if (occ.legs.length === 1) {
+      setPreview(occ.legs[0])
+      setStep('confirm')
+    } else {
+      setLegs(sortLegsByTime(occ.legs))
+      setStep('pick-leg')
     }
   }
 
@@ -131,12 +183,15 @@ export function AddFlightPage(): React.ReactElement {
     setError('')
     setAdding(true)
     try {
+      // ADD-8: pass the confirmed preview so the server doesn't re-query the
+      // provider (no double lookup, no extra budget spend).
       const flight = await api.flights.add({
         ident: ident.toUpperCase().replace(/\s+/g, ''),
-        date,
+        date: selectedDate || preview.departureScheduled.substring(0, 10) || date,
         tripId: tripId || undefined,
         origin: preview.origin,
         dest: preview.destination,
+        preview,
       })
       await queryClient.invalidateQueries({ queryKey: ['flights'] })
       navigate(`/flights/${flight.id}`)
@@ -162,20 +217,38 @@ export function AddFlightPage(): React.ReactElement {
         <button
           type="button"
           className={`mode-btn${mode === 'flight' ? ' active' : ''}`}
-          onClick={() => { setMode('flight'); setStep('form'); setError(''); setIdent(''); setPreview(null); setTrainPreview(null) }}
+          onClick={() => { setMode('flight'); setStep('form'); setError(''); setIdent(''); setPreview(null); setTrainPreview(null); setOccurrences([]); setLegs([]); setProvider(null) }}
         >
           <PlaneIcon /> Flight
         </button>
         <button
           type="button"
           className={`mode-btn${mode === 'train' ? ' active' : ''}`}
-          onClick={() => { setMode('train'); setStep('form'); setError(''); setIdent(''); setPreview(null); setTrainPreview(null) }}
+          onClick={() => { setMode('train'); setStep('form'); setError(''); setIdent(''); setPreview(null); setTrainPreview(null); setOccurrences([]); setLegs([]); setProvider(null) }}
         >
           <TrainIconBtn /> Train
         </button>
       </div>
 
       {error && <div className="error-box" style={{ maxWidth: 480 }}>{error}</div>}
+
+      {/* ADD-6: be honest when results are synthesized demo data (no API key). */}
+      {mode === 'flight' && provider === 'demo' && step !== 'form' && (
+        <div
+          style={{
+            maxWidth: 480,
+            marginBottom: '0.85rem',
+            padding: '0.6rem 0.85rem',
+            borderRadius: 'var(--radius)',
+            border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+            background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+            color: 'var(--text-muted)',
+            fontSize: '0.78rem',
+          }}
+        >
+          <strong style={{ color: 'var(--text)' }}>Demo data</strong> — no flight-data API key is configured, so these times are realistic but simulated.
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         {step === 'form' && (
@@ -222,10 +295,15 @@ export function AddFlightPage(): React.ReactElement {
                   )}
                 </div>
                 <div className="form-group">
-                  <label>Date</label>
-                  <input type="date" value={date} onChange={e => setDate(e.target.value)} required />
+                  <label>{mode === 'train' ? 'Date' : 'Date (optional)'}</label>
+                  <input type="date" value={date} onChange={e => setDate(e.target.value)} required={mode === 'train'} />
                 </div>
               </div>
+              {mode === 'flight' && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '-0.35rem', marginBottom: '0.25rem' }}>
+                  Just enter the flight number — we'll find the next departure. The date is only used as a hint.
+                </div>
+              )}
 
               {trips && trips.length > 0 && (
                 <div className="form-group">
@@ -244,11 +322,92 @@ export function AddFlightPage(): React.ReactElement {
                       <span className="loading-spinner" style={{ width: 16, height: 16 }} />
                       Looking up…
                     </span>
-                  ) : mode === 'train' ? 'Look up train' : 'Look up flight'}
+                  ) : mode === 'train' ? 'Look up train' : 'Find flight'}
                 </button>
                 <button type="button" className="secondary" onClick={() => navigate(-1)}>Cancel</button>
               </div>
             </form>
+          </motion.div>
+        )}
+
+        {step === 'pick-date' && (
+          <motion.div
+            key="pick-date"
+            initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            style={{ maxWidth: 480 }}
+          >
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+              <strong style={{ color: 'var(--text)' }}>{ident.toUpperCase()}</strong> next flies on these dates. Pick your departure.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              {occurrences.map((occ, oi) => {
+                const isNext = oi === 0
+                const firstLeg = sortLegsByTime(occ.legs)[0]
+                const orig = getAirport(firstLeg.origin)
+                const dest = getAirport(firstLeg.destination)
+                const depTime = firstLeg.departureEstimated ?? firstLeg.departureScheduled
+                const originTz = getAirportTz(firstLeg.origin)
+                const relDay = formatRelativeDayInZone(new Date(occ.date + 'T12:00:00Z'), new Date(), 'UTC')
+                return (
+                  <button
+                    key={occ.date}
+                    onClick={() => handlePickDate(occ)}
+                    style={{
+                      textAlign: 'left',
+                      padding: '1rem 1.1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '1rem',
+                      background: 'var(--card-bg)',
+                      border: isNext ? '1.5px solid var(--accent)' : '1.5px solid var(--border)',
+                      borderRadius: 'var(--radius)',
+                      cursor: 'pointer',
+                      width: '100%',
+                      transition: 'border-color 0.15s, box-shadow 0.15s',
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{relDay}</span>
+                        {isNext && (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            letterSpacing: '0.05em',
+                            color: 'var(--accent)',
+                            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '999px',
+                            textTransform: 'uppercase',
+                          }}>
+                            Next departure
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {firstLeg.origin} → {firstLeg.destination}
+                        {occ.legs.length > 1 ? ` · ${occ.legs.length} legs` : ` · ${orig?.city ?? firstLeg.origin} to ${dest?.city ?? firstLeg.destination}`}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '1rem', fontFamily: 'monospace', letterSpacing: '0.04em' }}>
+                        {formatTimeInZone(depTime, originTz)}
+                      </div>
+                      <div style={{ marginTop: '0.25rem' }}>
+                        <StatusBadge status={firstLeg.status} />
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ marginTop: '1rem' }}>
+              <button type="button" className="secondary" onClick={() => { setStep('form'); setError('') }}>
+                ← Search again
+              </button>
+            </div>
           </motion.div>
         )}
 
@@ -260,7 +419,7 @@ export function AddFlightPage(): React.ReactElement {
             style={{ maxWidth: 480 }}
           >
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              <strong style={{ color: 'var(--text)' }}>{ident.toUpperCase()}</strong> operates {legs.length} legs on this date. Which one is yours?
+              <strong style={{ color: 'var(--text)' }}>{ident.toUpperCase()}</strong> has {legs.length} flights{selectedDate ? ` on ${formatRelativeDayInZone(new Date(selectedDate + 'T12:00:00Z'), new Date(), 'UTC')}` : ''}. Which leg is yours?
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               {legs.map((leg, i) => {
@@ -321,11 +480,11 @@ export function AddFlightPage(): React.ReactElement {
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: '1rem', fontFamily: 'monospace', letterSpacing: '0.04em' }}>
-                        {formatLocalTime(depTime, originTz)}
+                        {formatTimeInZone(depTime, originTz)}
                       </div>
                       {arrTime && (
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
-                          → {formatLocalTime(arrTime, getAirportTz(leg.destination))}
+                          → {formatTimeInZone(arrTime, getAirportTz(leg.destination))}
                         </div>
                       )}
                       <div style={{ marginTop: '0.25rem' }}>
@@ -337,8 +496,8 @@ export function AddFlightPage(): React.ReactElement {
               })}
             </div>
             <div style={{ marginTop: '1rem' }}>
-              <button type="button" className="secondary" onClick={() => { setStep('form'); setError('') }}>
-                ← Search again
+              <button type="button" className="secondary" onClick={() => { setStep(occurrences.length > 1 ? 'pick-date' : 'form'); setError('') }}>
+                ← Back
               </button>
             </div>
           </motion.div>
@@ -517,11 +676,11 @@ export function AddFlightPage(): React.ReactElement {
               <div className="info-grid" style={{ marginTop: 0 }}>
                 <div className="info-cell">
                   <div className="info-cell-label">Departure</div>
-                  <div className="info-cell-value">{formatLocalTime(preview.departureEstimated ?? preview.departureScheduled, originTz)}</div>
+                  <div className="info-cell-value">{formatTimeInZone(preview.departureEstimated ?? preview.departureScheduled, originTz)}</div>
                 </div>
                 <div className="info-cell">
                   <div className="info-cell-label">Arrival</div>
-                  <div className="info-cell-value">{formatLocalTime(preview.arrivalEstimated ?? preview.arrivalScheduled, destTz)}</div>
+                  <div className="info-cell-value">{formatTimeInZone(preview.arrivalEstimated ?? preview.arrivalScheduled, destTz)}</div>
                 </div>
                 {preview.gateDeparture && (
                   <div className="info-cell">
@@ -550,7 +709,7 @@ export function AddFlightPage(): React.ReactElement {
               <button
                 type="button"
                 className="secondary"
-                onClick={() => { setStep(legs.length > 1 ? 'pick-leg' : 'form'); setError('') }}
+                onClick={() => { setStep(legs.length > 1 ? 'pick-leg' : occurrences.length > 1 ? 'pick-date' : 'form'); setError('') }}
                 disabled={adding}
               >
                 ← Back

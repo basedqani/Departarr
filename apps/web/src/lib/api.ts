@@ -71,10 +71,12 @@ export const api = {
     get: (id: string) =>
       request<FlightWithEvents>(`/flights/${id}`),
     lookup: (ident: string, date: string) =>
-      request<FlightPreview>(`/flights/lookup?ident=${encodeURIComponent(ident)}&date=${encodeURIComponent(date)}`),
+      request<FlightPreview & { provider?: ProviderId }>(`/flights/lookup?ident=${encodeURIComponent(ident)}&date=${encodeURIComponent(date)}`),
     lookupAll: (ident: string, date: string) =>
-      request<FlightPreview[]>(`/flights/lookup-all?ident=${encodeURIComponent(ident)}&date=${encodeURIComponent(date)}`),
-    add: (data: { ident: string; date: string; tripId?: string; origin?: string; dest?: string }) =>
+      request<{ provider: ProviderId; legs: FlightPreview[] }>(`/flights/lookup-all?ident=${encodeURIComponent(ident)}&date=${encodeURIComponent(date)}`),
+    lookupUpcoming: (ident: string, days?: number) =>
+      request<UpcomingResult>(`/flights/lookup-upcoming?ident=${encodeURIComponent(ident)}${days ? `&days=${days}` : ''}`),
+    add: (data: { ident: string; date: string; tripId?: string; origin?: string; dest?: string; preview?: FlightPreview }) =>
       request<Flight>('/flights', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<void>(`/flights/${id}`, { method: 'DELETE' }),
@@ -279,6 +281,20 @@ export interface FlightPreview {
   terminalArrival?: string | null
   aircraftType?: string | null
   registration?: string | null
+}
+
+export type ProviderId = 'flightaware' | 'aerodatabox' | 'demo'
+
+// ADD-2: next-occurrence lookup result. Occurrences grouped by local day.
+export interface UpcomingOccurrence {
+  date: string
+  legs: FlightPreview[]
+}
+
+export interface UpcomingResult {
+  provider: ProviderId
+  ident: string
+  occurrences: UpcomingOccurrence[]
 }
 
 export interface AircraftPhoto {

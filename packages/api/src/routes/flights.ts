@@ -2,10 +2,33 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { authMiddleware } from '../middleware/auth.js'
-import { lookupFlight, lookupAllFlightLegs } from '../services/flightAware.js'
+import { lookupFlight, lookupAllFlightLegs, lookupAllFlightLegsWithProvider, lookupUpcoming, getActiveProvider, type FlightData } from '../services/flightAware.js'
 import { getAircraftPosition } from '../services/openSky.js'
 import { analyseConnections } from '../services/connectionAssistant.js'
 import { AIRPORT_COORDS } from '../data/airports.js'
+
+// ADD-8: the client may pass the already-confirmed preview so the server does
+// NOT re-query the provider on add (eliminating the double lookup). All preview
+// fields are optional — when present and self-consistent we trust them; the
+// faFlightId still lets the poller re-fetch live status later.
+const previewSchema = z.object({
+  faFlightId: z.string().optional(),
+  airlineIata: z.string().optional(),
+  flightNumber: z.string().optional(),
+  origin: z.string().min(3).max(4).toUpperCase(),
+  destination: z.string().min(3).max(4).toUpperCase(),
+  departureScheduled: z.string(),
+  departureEstimated: z.string().nullish(),
+  arrivalScheduled: z.string(),
+  arrivalEstimated: z.string().nullish(),
+  status: z.string(),
+  gateDeparture: z.string().nullish(),
+  gateArrival: z.string().nullish(),
+  terminalDeparture: z.string().nullish(),
+  terminalArrival: z.string().nullish(),
+  aircraftType: z.string().nullish(),
+  registration: z.string().nullish(),
+})
 
 const addFlightSchema = z.object({
   ident: z.string().min(2).max(10).toUpperCase(),
@@ -13,6 +36,12 @@ const addFlightSchema = z.object({
   tripId: z.string().optional(),
   origin: z.string().length(3).toUpperCase().optional(),
   dest: z.string().length(3).toUpperCase().optional(),
+  preview: previewSchema.optional(),
+})
+
+const upcomingQuerySchema = z.object({
+  ident: z.string().min(2).max(10),
+  days: z.coerce.number().int().min(1).max(14).optional(),
 })
 
 const patchFlightSchema = z.object({
@@ -167,18 +196,40 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
 
     const data = await lookupFlight(q.data.ident.toUpperCase().replace(/\s+/g, ''), q.data.date)
     if (!data) return reply.code(404).send({ error: 'Flight not found' })
-    return reply.send(data)
+    const provider = await getActiveProvider()
+    return reply.send({ ...data, provider })
   })
 
   // GET /api/flights/lookup-all — returns ALL legs for a flight number + date
   // so the UI can show a leg picker when a flight number covers multiple routes.
+  // ADD-6: also reports the active provider so the UI can flag demo data.
   app.get('/flights/lookup-all', async (req, reply) => {
     const q = lookupQuerySchema.safeParse(req.query)
     if (!q.success) return reply.code(400).send({ error: q.error.flatten() })
 
-    const legs = await lookupAllFlightLegs(q.data.ident.toUpperCase().replace(/\s+/g, ''), q.data.date)
+    const { provider, legs } = await lookupAllFlightLegsWithProvider(
+      q.data.ident.toUpperCase().replace(/\s+/g, ''),
+      q.data.date,
+    )
     if (legs.length === 0) return reply.code(404).send({ error: 'Flight not found' })
-    return reply.send(legs)
+    return reply.send({ provider, legs })
+  })
+
+  // GET /api/flights/lookup-upcoming — ADD-2: find the next departures for a
+  // flight number, scanning today→+N days, grouped by date. Lets the user add a
+  // flight by ident alone (date optional) like Flighty/FlightAware.
+  app.get('/flights/lookup-upcoming', async (req, reply) => {
+    const q = upcomingQuerySchema.safeParse(req.query)
+    if (!q.success) return reply.code(400).send({ error: q.error.flatten() })
+
+    const result = await lookupUpcoming(
+      q.data.ident.toUpperCase().replace(/\s+/g, ''),
+      q.data.days ?? 7,
+    )
+    if (result.occurrences.length === 0) {
+      return reply.code(404).send({ error: 'No upcoming flights found', provider: result.provider })
+    }
+    return reply.send(result)
   })
 
   // POST /api/flights
@@ -187,10 +238,41 @@ export async function flightRoutes(app: FastifyInstance): Promise<void> {
     const body = addFlightSchema.safeParse(req.body)
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() })
 
-    const flightData = await lookupFlight(body.data.ident, body.data.date, {
-      origin: body.data.origin,
-      dest: body.data.dest,
-    })
+    // ADD-8: avoid the double provider lookup. If the client passes the preview
+    // it already confirmed, trust it and skip re-querying the provider. We only
+    // hit the provider again when no preview was supplied (e.g. older clients).
+    let flightData: FlightData | null
+    if (body.data.preview) {
+      const p = body.data.preview
+      const dep = new Date(p.departureScheduled)
+      const arr = new Date(p.arrivalScheduled)
+      if (isNaN(dep.getTime()) || isNaN(arr.getTime())) {
+        return reply.code(400).send({ error: 'Invalid preview times' })
+      }
+      flightData = {
+        faFlightId: p.faFlightId,
+        airlineIata: p.airlineIata,
+        flightNumber: p.flightNumber,
+        origin: p.origin,
+        destination: p.destination,
+        departureScheduled: dep,
+        departureEstimated: p.departureEstimated ? new Date(p.departureEstimated) : undefined,
+        arrivalScheduled: arr,
+        arrivalEstimated: p.arrivalEstimated ? new Date(p.arrivalEstimated) : undefined,
+        status: p.status,
+        gateDeparture: p.gateDeparture ?? undefined,
+        gateArrival: p.gateArrival ?? undefined,
+        terminalDeparture: p.terminalDeparture ?? undefined,
+        terminalArrival: p.terminalArrival ?? undefined,
+        aircraftType: p.aircraftType ?? undefined,
+        registration: p.registration ?? undefined,
+      }
+    } else {
+      flightData = await lookupFlight(body.data.ident, body.data.date, {
+        origin: body.data.origin,
+        dest: body.data.dest,
+      })
+    }
     if (!flightData) return reply.code(404).send({ error: 'Flight not found' })
 
     const flight = await prisma.flight.create({

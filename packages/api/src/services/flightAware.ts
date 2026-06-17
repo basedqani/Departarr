@@ -171,10 +171,32 @@ function nextDay(date: string): string {
   return d.toISOString().substring(0, 10)
 }
 
+/**
+ * ADD-4: Compute the UTC window that fully covers the *local airport calendar
+ * day* for `date` (YYYY-MM-DD), regardless of which timezone the origin sits in.
+ *
+ * The old window (`date T00:00Z` → `date+1 T06:00Z`) was anchored on raw UTC
+ * midnight, so an evening-local flight in a positive-UTC zone (e.g. a 21:00
+ * local departure in Asia/Tokyo, UTC+9, which is `date-1 12:00Z`) fell *before*
+ * the window and returned a false 404. Earth's offsets span UTC-12..UTC+14, so
+ * widening the window by 14h on each side guarantees the whole local day of any
+ * airport is contained. Returns AeroAPI-ready ISO strings (no millis).
+ */
+function localDayWindowUtc(date: string): { start: string; end: string } {
+  const dayStart = new Date(date + 'T00:00:00Z').getTime()
+  const dayEnd = new Date(nextDay(date) + 'T00:00:00Z').getTime()
+  const PAD_MS = 14 * 60 * 60 * 1000 // max +14 / -12 offset, padded to 14 both ways
+  const start = new Date(dayStart - PAD_MS).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  const end = new Date(dayEnd + PAD_MS).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  return { start, end }
+}
+
 async function lookupFlightAware(ident: string, date: string): Promise<FlightData | null> {
   const apiKey = await getApiKey()
-  // AeroAPI v4 requires ISO 8601 datetimes and a non-zero window spanning the flight day
-  const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}T00%3A00%3A00Z&end=${nextDay(date)}T06%3A00%3A00Z&max_pages=1`
+  // AeroAPI v4 requires ISO 8601 datetimes and a non-zero window spanning the
+  // flight's LOCAL day (ADD-4) — anchored on the airport day, not UTC midnight.
+  const { start, end } = localDayWindowUtc(date)
+  const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=1`
   await incrementUsage('aeroapi')
   const res = await fetch(url, { headers: { 'x-apikey': apiKey } })
 
@@ -203,8 +225,9 @@ export async function lookupAllFlightLegs(
   const apiKey = await getApiKey()
   if (apiKey) {
     // FlightAware returns multiple entries for different legs in the same call;
-    // fetch them all and let the UI pick.
-    const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${date}T00%3A00%3A00Z&end=${nextDay(date)}T06%3A00%3A00Z&max_pages=1`
+    // fetch them all and let the UI pick. Window anchored on the local day (ADD-4).
+    const { start, end } = localDayWindowUtc(date)
+    const url = `${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&max_pages=1`
     await incrementUsage('aeroapi')
     try {
       const res = await fetch(url, { headers: { 'x-apikey': apiKey } })
@@ -228,6 +251,78 @@ export async function lookupAllFlightLegs(
   // Demo mode: single stub leg
   const stub = await generateStubFlight(ident, date)
   return stub ? [stub] : []
+}
+
+/**
+ * Provider-aware leg lookup (ADD-6). Same data as `lookupAllFlightLegs` but also
+ * reports which provider produced the result so the UI can show a "demo data"
+ * banner. Demo is only used when no real provider is configured.
+ */
+export async function lookupAllFlightLegsWithProvider(
+  ident: string,
+  date: string,
+): Promise<{ provider: ProviderId; legs: FlightData[] }> {
+  const provider = await getActiveProvider()
+  const legs = await lookupAllFlightLegs(ident, date)
+  return { provider, legs }
+}
+
+export interface UpcomingOccurrence {
+  date: string // YYYY-MM-DD (the scanned local day this leg was found on)
+  legs: FlightData[]
+}
+
+export interface UpcomingResult {
+  provider: ProviderId
+  ident: string
+  occurrences: UpcomingOccurrence[]
+}
+
+/**
+ * ADD-2: Find the next upcoming occurrences of a flight number, scanning from
+ * today through +`days`. Real trackers take just the flight number → show the
+ * next departure → let the user pick a date, so a flight that next flies
+ * tomorrow no longer 404s.
+ *
+ * Budget discipline: we stop scanning as soon as the active provider goes over
+ * budget (so we never burn the whole month's quota on one search), and demo
+ * mode is free so it always scans the full range. Each day reuses the existing
+ * windowed `lookupAllFlightLegs`, so the local-day anchoring (ADD-4) applies.
+ */
+export async function lookupUpcoming(
+  ident: string,
+  days = 7,
+  today: Date = new Date(),
+): Promise<UpcomingResult> {
+  const provider = await getActiveProvider()
+  const occurrences: UpcomingOccurrence[] = []
+
+  for (let i = 0; i <= days; i++) {
+    // Respect the meter: bail out of further paid scans once over budget, but
+    // keep whatever we've already found. Demo provider is free → never bails.
+    if (provider !== 'demo' && (await isActiveProviderOverBudget())) break
+
+    const d = new Date(today.getTime())
+    d.setUTCDate(d.getUTCDate() + i)
+    const date = d.toISOString().substring(0, 10)
+
+    const legs = await lookupAllFlightLegs(ident, date)
+    // Keep only legs whose scheduled departure is still in the future (today's
+    // already-departed legs aren't "upcoming") and that actually belong to this
+    // scanned day (the wide ADD-4 window can return adjacent-day legs).
+    const upcomingLegs = legs.filter(
+      (l) =>
+        l.departureScheduled instanceof Date &&
+        !isNaN(l.departureScheduled.getTime()) &&
+        l.departureScheduled.getTime() >= today.getTime() &&
+        l.departureScheduled.toISOString().substring(0, 10) === date,
+    )
+    if (upcomingLegs.length > 0) {
+      occurrences.push({ date, legs: upcomingLegs })
+    }
+  }
+
+  return { provider, ident, occurrences }
 }
 
 export async function fetchFlightById(faFlightId: string): Promise<FlightData | null> {
