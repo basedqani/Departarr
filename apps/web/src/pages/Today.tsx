@@ -85,10 +85,14 @@ export function TodayPage(): React.ReactElement {
       <div style={{ paddingTop: '0.75rem', marginBottom: '0.25rem' }}>
         <div className="greeting">{getGreeting()}</div>
         <div className="greeting-sub">
-          {flights && flights.length > 0
-            ? `You have ${flights.length} flight${flights.length > 1 ? 's' : ''} today`
-            : 'No flights scheduled for today'
-          }
+          {(() => {
+            // GEN-5: count flights AND trains so the header isn't "0 flights"
+            // when the user only has trains scheduled today.
+            const total = (flights?.length ?? 0) + trains.length
+            return total > 0
+              ? `You have ${total} trip${total > 1 ? 's' : ''} today`
+              : 'Nothing scheduled for today'
+          })()}
         </div>
       </div>
 
@@ -100,7 +104,7 @@ export function TodayPage(): React.ReactElement {
       )}
 
       <AnimatePresence>
-        {flights && flights.length === 0 && !isLoading && (
+        {flights && flights.length === 0 && trains.length === 0 && !isLoading && (
           <EmptyState />
         )}
       </AnimatePresence>
