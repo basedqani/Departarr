@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { formatRelativeDayInZone } from '../lib/format'
 
 interface FlightTimes {
   departureScheduled: string
@@ -39,19 +40,7 @@ function timeAgo(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function formatRelativeDay(date: Date): string {
-  const now = new Date()
-  // Compare calendar days
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const dayDiff = Math.round((dateStart.getTime() - todayStart.getTime()) / 86400_000)
-
-  if (dayDiff === 1) return 'tomorrow'
-  if (dayDiff > 1 && dayDiff < 7) return `in ${dayDiff} days`
-  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-}
-
-function computeCountdown(flight: FlightTimes): string {
+function computeCountdown(flight: FlightTimes, tz: string | null | undefined): string {
   const now = Date.now()
   const st = flight.status.toLowerCase().replace(/[\s_]+/g, '-')
 
@@ -90,7 +79,7 @@ function computeCountdown(flight: FlightTimes): string {
   // scheduled / unknown
   if (depTime > now) {
     const diff = depTime - now
-    if (diff > 24 * 60 * 60 * 1000) return `Departs ${formatRelativeDay(new Date(depTime))}`
+    if (diff > 24 * 60 * 60 * 1000) return `Departs ${formatRelativeDayInZone(new Date(depTime), new Date(now), tz)}`
     return `Departs in ${formatDuration(diff)}`
   }
 
@@ -123,24 +112,27 @@ function getTickInterval(flight: FlightTimes): number {
 
 // Accepts a nullable flight so callers can invoke the hook unconditionally
 // (above any early returns) per the Rules of Hooks, even before data loads.
-export function useCountdown(flight: FlightTimes | null | undefined): string {
-  const [text, setText] = useState(() => (flight ? computeCountdown(flight) : ''))
+export function useCountdown(
+  flight: FlightTimes | null | undefined,
+  tz?: string | null,
+): string {
+  const [text, setText] = useState(() => (flight ? computeCountdown(flight, tz) : ''))
 
   useEffect(() => {
     if (!flight) {
       setText('')
       return
     }
-    setText(computeCountdown(flight))
+    setText(computeCountdown(flight, tz))
     const interval = getTickInterval(flight)
     if (interval === 0) return
 
     const id = setInterval(() => {
-      setText(computeCountdown(flight))
+      setText(computeCountdown(flight, tz))
     }, interval)
 
     return () => clearInterval(id)
-  }, [flight])
+  }, [flight, tz])
 
   return text
 }

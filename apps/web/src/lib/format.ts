@@ -1,3 +1,5 @@
+import { getAirport } from './airports'
+
 // ─── Amtrak station → IANA timezone ─────────────────────────────────────────
 const AMTRAK_TZ: Record<string, string> = {
   // Eastern
@@ -43,8 +45,14 @@ const AMTRAK_TZ: Record<string, string> = {
   EMY2: 'America/Los_Angeles',
 }
 
-export function getAmtrakStationTz(code: string): string {
-  return AMTRAK_TZ[code.toUpperCase()] ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+/**
+ * Resolves an Amtrak station code to an IANA timezone, or `null` if unknown.
+ * IMPORTANT: never falls back to the viewer's machine timezone — callers must
+ * treat `null` as "render in UTC with an explicit UTC label" so train times are
+ * never silently shifted into the wrong zone.
+ */
+export function getAmtrakStationTz(code: string): string | null {
+  return AMTRAK_TZ[code.toUpperCase()] ?? null
 }
 
 // ─── Airport → IANA timezone ──────────────────────────────────────────────────
@@ -92,14 +100,32 @@ const AIRPORT_TZ: Record<string, string> = {
   CUN: 'America/Cancun', GDL: 'America/Mexico_City',
 }
 
-export function getAirportTz(iata: string): string {
-  return AIRPORT_TZ[iata] ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+/**
+ * Resolves an airport IATA code to an IANA timezone, or `null` if unknown.
+ * Primary source is the full OpenFlights airport dataset (getAirport().tz),
+ * with a small hard-coded map as a last-resort fallback for codes missing a tz.
+ * IMPORTANT: never falls back to the viewer's machine timezone — callers must
+ * treat `null` as "render in UTC with an explicit UTC label" so flight times are
+ * never silently shifted into the wrong zone.
+ */
+export function getAirportTz(iata: string): string | null {
+  if (!iata) return null
+  const code = iata.toUpperCase()
+  return getAirport(code)?.tz ?? AIRPORT_TZ[code] ?? null
 }
 
-export function formatTime(dateStr: string | null | undefined): string {
+/**
+ * Formats a UTC ISO string as a wall-clock time in the given IANA zone, always
+ * including the zone abbreviation. When `tz` is null/undefined the time is
+ * rendered in UTC with a "UTC" label — never in the viewer's machine zone — so
+ * the displayed offset is always self-evident and honest.
+ */
+export function formatTime(
+  dateStr: string | null | undefined,
+  tz: string | null | undefined,
+): string {
   if (!dateStr) return '--:--'
-  const d = new Date(dateStr)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return formatTimeInZone(dateStr, tz ?? 'UTC')
 }
 
 export function formatDate(dateStr: string | null | undefined): string {
@@ -108,7 +134,34 @@ export function formatDate(dateStr: string | null | undefined): string {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export function formatDateTime(dateStr: string | null | undefined): string {
+/**
+ * Formats a UTC ISO string as a date+time in the given IANA zone, always
+ * including the zone abbreviation. When `tz` is null/undefined renders in UTC
+ * with a "UTC" label — never the viewer's machine zone.
+ */
+export function formatDateTime(
+  dateStr: string | null | undefined,
+  tz: string | null | undefined,
+): string {
+  if (!dateStr) return '---'
+  const d = new Date(dateStr)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz ?? 'UTC',
+    month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  }).formatToParts(d)
+  return parts.map(p => p.value).join('')
+}
+
+/**
+ * Viewer-local date+time for genuine audit timestamps (e.g. the Share page event
+ * log) where the viewer's own clock is the correct frame of reference. This is
+ * the ONLY formatter that intentionally uses the machine timezone — do NOT use
+ * it for flight/train times.
+ */
+export function formatDateTimeLocal(dateStr: string | null | undefined): string {
   if (!dateStr) return '---'
   const d = new Date(dateStr)
   return d.toLocaleString([], {
@@ -155,12 +208,12 @@ export function formatDuration(ms: number): string {
  */
 export function formatTimeInZone(
   dateStr: string | null | undefined,
-  tz: string,
+  tz: string | null | undefined,
 ): string {
   if (!dateStr) return '--:--'
   const d = new Date(dateStr)
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
+    timeZone: tz ?? 'UTC',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
@@ -175,21 +228,58 @@ export function formatTimeInZone(
   return tzAbbr ? `${time} ${tzAbbr}` : time
 }
 
+/**
+ * Formats a UTC ISO string as a wall-clock flight/train time, always including
+ * the zone abbreviation so the offset is self-evident. When `tz` is
+ * null/undefined the time renders in UTC with a "UTC" label — NEVER in the
+ * viewer's machine zone. This guarantees a 4:30 PM departure never silently
+ * appears as 6:30 PM just because the data lacked a tz.
+ */
 export function formatLocalTime(
   dateStr: string | null | undefined,
-  tz: string | undefined,
+  tz: string | null | undefined,
 ): string {
   if (!dateStr) return '--:--'
-  const d = new Date(dateStr)
-  if (!tz) {
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-  }
-  return new Intl.DateTimeFormat('en-US', {
+  return formatTimeInZone(dateStr, tz ?? 'UTC')
+}
+
+/**
+ * Returns the calendar day (YYYY-MM-DD) of a Date as observed in `tz`.
+ * Used to compute "tomorrow"/"in N days" relative to the FLIGHT's origin zone
+ * rather than the viewer's machine calendar.
+ */
+function calendarDayInZone(date: Date, tz: string): string {
+  // en-CA yields ISO-ish YYYY-MM-DD which sorts/parses cleanly.
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }).format(d)
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date)
+}
+
+/**
+ * Human-readable relative day ("tomorrow", "in 3 days", or a weekday/date),
+ * computed in the given IANA zone. When `tz` is null/undefined, UTC is used as a
+ * stable fallback — never the viewer's machine zone — so the relative day stays
+ * consistent with the displayed wall-clock time.
+ */
+export function formatRelativeDayInZone(
+  target: Date,
+  now: Date,
+  tz: string | null | undefined,
+): string {
+  const zone = tz ?? 'UTC'
+  const targetDay = calendarDayInZone(target, zone)
+  const todayDay = calendarDayInZone(now, zone)
+  // Diff in whole days between two YYYY-MM-DD strings (UTC-anchored to avoid DST).
+  const dayDiff = Math.round(
+    (Date.parse(targetDay + 'T00:00:00Z') - Date.parse(todayDay + 'T00:00:00Z')) / 86400_000,
+  )
+  if (dayDiff === 1) return 'tomorrow'
+  if (dayDiff > 1 && dayDiff < 7) return `in ${dayDiff} days`
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    weekday: 'short', month: 'short', day: 'numeric',
+  }).format(target)
 }
 
 /** Returns a human-readable offset difference string like "Tokyo is 16h ahead" or null if unknown/same. */

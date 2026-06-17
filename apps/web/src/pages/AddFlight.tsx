@@ -418,7 +418,7 @@ export function AddFlightPage(): React.ReactElement {
                       const offset = gtfsMs(sel?.schDep ?? sel?.schArr ?? originStop.schDep ?? '0:0:0') - base
                       const utc = new Date(new Date(trainPreview.departureScheduled).getTime() + offset)
                       const tz = getAmtrakStationTz(boardingStopCode || trainPreview.origin)
-                      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(utc)
+                      return new Intl.DateTimeFormat('en-US', { timeZone: tz ?? 'UTC', hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(utc)
                     })()}
                   </div>
                 </div>
@@ -434,7 +434,7 @@ export function AddFlightPage(): React.ReactElement {
                       const offset = gtfsMs(sel?.schArr ?? sel?.schDep ?? lastStop.schArr ?? lastStop.schDep ?? '0:0:0') - base
                       const utc = new Date(new Date(trainPreview.departureScheduled).getTime() + offset)
                       const tz = getAmtrakStationTz(arrivingStopCode || trainPreview.destination)
-                      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(utc)
+                      return new Intl.DateTimeFormat('en-US', { timeZone: tz ?? 'UTC', hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(utc)
                     })()}
                   </div>
                 </div>

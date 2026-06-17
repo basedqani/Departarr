@@ -100,7 +100,7 @@ function countdownColor(flight: Flight): string {
 }
 
 function CountdownChip({ flight }: { flight: Flight }): React.ReactElement {
-  const text = useCountdown(flight)
+  const text = useCountdown(flight, getAirportTz(flight.origin))
   return (
     <span style={{
       fontSize: '0.68rem',
