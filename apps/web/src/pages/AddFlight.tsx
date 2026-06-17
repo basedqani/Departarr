@@ -13,7 +13,7 @@ type AddMode = 'flight' | 'train'
 /** Format a stop's absolute ISO time in its own timezone as HH:MM (24h). */
 function fmtStopTime(iso: string | null | undefined, tz: string | undefined, fallbackCode: string): string {
   if (!iso) return ''
-  const zone = tz ?? getAmtrakStationTz(fallbackCode)
+  const zone = tz ?? getAmtrakStationTz(fallbackCode) ?? 'UTC'
   return new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
 }
 
