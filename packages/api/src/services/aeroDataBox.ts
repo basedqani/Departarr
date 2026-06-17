@@ -14,6 +14,7 @@
 
 import { getSettingWithEnvFallback } from '../lib/settings.js'
 import { incrementUsage } from '../lib/apiBudget.js'
+import { normalizeStatus } from '../lib/flightStatus.js'
 import type { FlightData } from './flightAware.js'
 
 const ADB_HOST = 'aerodatabox.p.rapidapi.com'
@@ -35,25 +36,9 @@ function parseAdbTime(t: { utc?: string | null } | null | undefined): Date | und
   return isNaN(d.getTime()) ? undefined : d
 }
 
-// Map AeroDataBox status strings → our internal vocabulary.
+// Map AeroDataBox status strings → our canonical vocabulary (shared module).
 function mapStatus(s: string | undefined): string {
-  switch ((s ?? '').toLowerCase()) {
-    case 'expected':
-    case 'scheduled':       return 'scheduled'
-    case 'checkin':
-    case 'boarding':        return 'boarding'
-    case 'gateclosed':
-    case 'departed':        return 'departed'
-    case 'enroute':
-    case 'approaching':     return 'en_route'
-    case 'arrived':         return 'arrived'
-    case 'delayed':         return 'scheduled'
-    case 'canceled':
-    case 'cancelled':
-    case 'canceleduncertain': return 'cancelled'
-    case 'diverted':        return 'diverted'
-    default:                return 'scheduled'
-  }
+  return normalizeStatus(s).status
 }
 
 interface AdbEndpoint {
