@@ -2,7 +2,7 @@ import { google } from 'googleapis'
 import { prisma } from '../lib/prisma.js'
 import { getSettingWithEnvFallback } from '../lib/settings.js'
 import { detectFlightsInEvent, extractEventDate } from './flightDetector.js'
-import { lookupFlight, lookupAllFlightLegs } from './flightAware.js'
+import { lookupFlight, lookupAllFlightLegs, isActiveProviderOverBudget } from './flightAware.js'
 import { detectTrainsInEvent } from './trainDetector.js'
 import { lookupTrainSchedule } from './gtfs.js'
 import type { FastifyRequest } from 'fastify'
@@ -94,7 +94,7 @@ export async function exchangeCodeForTokens(userId: string, code: string, req?: 
  * Flip this to true to re-enable auto-import once the boarding-stop resolution
  * is robust.
  */
-const ENABLE_TRAIN_AUTOSYNC = false
+const ENABLE_TRAIN_AUTOSYNC = true
 
 export interface SyncResult {
   flightsFound: number
@@ -138,19 +138,50 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
   let flightsAdded = 0
   let trainsAdded = 0
 
+  // CAL-6: incremental fetch. If we have a stored syncToken, ask Google for only
+  // the events changed since last sync. A syncToken request must NOT send
+  // timeMin/timeMax/orderBy. On a 410 (token expired) we fall back to a full
+  // windowed scan and capture a fresh token.
+  let useSyncToken = !!connection.syncToken
+  let nextSyncToken: string | null | undefined
+
   try {
     do {
-      const res = await calendar.events.list({
-        calendarId: 'primary',
-        timeMin,
-        timeMax,
-        maxResults: 250,
-        singleEvents: true,
-        orderBy: 'startTime',
-        pageToken,
-      })
+      let res
+      try {
+        res = await calendar.events.list(
+          useSyncToken
+            ? {
+                calendarId: 'primary',
+                maxResults: 250,
+                singleEvents: true,
+                syncToken: connection.syncToken ?? undefined,
+                pageToken,
+              }
+            : {
+                calendarId: 'primary',
+                timeMin,
+                timeMax,
+                maxResults: 250,
+                singleEvents: true,
+                orderBy: 'startTime',
+                pageToken,
+              },
+        )
+      } catch (err) {
+        const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status
+        if (useSyncToken && status === 410) {
+          // Token expired — restart with a full window scan this cycle.
+          console.log(`[calendar] syncToken expired for user ${userId}, falling back to full window`)
+          useSyncToken = false
+          pageToken = undefined
+          continue
+        }
+        throw err
+      }
 
       const events = res.data.items ?? []
+      if (res.data.nextSyncToken) nextSyncToken = res.data.nextSyncToken
 
       for (const event of events) {
         // Never let a single malformed event abort the whole sync.
@@ -178,14 +209,27 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
 
             console.log(`[calendar] Processing flight ${flight.ident} on ${date} (event: ${event.id ?? 'no-id'})`)
 
-            // Layer 1: precise dedup by calendar event ID
+            // The Google event's `updated` timestamp lets us detect edits to an
+            // already-imported event (same id, new time/number). CAL-3.
+            const eventUpdated = event.updated ? new Date(event.updated) : null
+
+            // Layer 1: precise dedup by calendar event ID. If the event was
+            // edited in Google Calendar since we last imported it, re-enrich by
+            // deleting the stale row and falling through to a fresh lookup.
             if (event.id) {
               const byEventId = await prisma.flight.findFirst({
                 where: { userId, calendarEventId: event.id },
               })
               if (byEventId) {
-                console.log(`[calendar] ${flight.ident} on ${date} already in DB by event ID, skipping`)
-                continue
+                const stored = byEventId.calendarEventUpdated?.getTime() ?? null
+                const incoming = eventUpdated?.getTime() ?? null
+                const changed = incoming !== null && incoming !== stored
+                if (!changed) {
+                  console.log(`[calendar] ${flight.ident} on ${date} already in DB by event ID, skipping`)
+                  continue
+                }
+                console.log(`[calendar] ${flight.ident} on ${date} changed in GCal (updated ${event.updated}), re-enriching`)
+                await prisma.flight.delete({ where: { id: byEventId.id } })
               }
             }
 
@@ -210,26 +254,31 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
               const departureUtc =
                 (start as { date?: string; dateTime?: string }).dateTime ?? undefined
 
-              let flightData = await lookupFlight(flight.ident, date, {
-                origin: flight.origin,
-                dest: flight.dest,
-                departureUtc,
-              })
-
-              // If no route hint was available and lookupFlight returned nothing,
-              // try fetching all legs and pick the one matching the date.
-              if (!flightData && !flight.origin && !flight.dest) {
+              // CAL-1: never make a billable provider call when the active
+              // provider is over its budget cap. Fall straight through to the
+              // stub-save path below so the event still imports (free).
+              let flightData = null
+              if (await isActiveProviderOverBudget()) {
+                console.log(`[calendar] ${flight.ident} on ${date}: provider over budget, saving stub (no paid call)`)
+              } else if (!flight.origin && !flight.dest) {
+                // CAL-2: no route hint → a single multi-leg call covers both the
+                // "find the flight" and "pick the right leg" cases. Avoids the
+                // old redundant lookupFlight + lookupAllFlightLegs double call.
                 const allLegs = await lookupAllFlightLegs(flight.ident, date)
-                if (allLegs.length === 0) {
-                  flightData = null
-                } else if (allLegs.length === 1) {
+                if (allLegs.length === 1) {
                   flightData = allLegs[0]
-                } else {
+                } else if (allLegs.length > 1) {
                   const matched = allLegs.find(leg =>
                     leg.departureScheduled.toISOString().substring(0, 10) === date
                   )
                   flightData = matched ?? allLegs[0]
                 }
+              } else {
+                flightData = await lookupFlight(flight.ident, date, {
+                  origin: flight.origin,
+                  dest: flight.dest,
+                  departureUtc,
+                })
               }
 
               if (!flightData) {
@@ -265,6 +314,7 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                     aircraftType: null,
                     registration: null,
                     calendarEventId: event.id ?? null,
+                    calendarEventUpdated: eventUpdated,
                     lastPolledAt: null,
                   },
                 })
@@ -294,6 +344,7 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                   aircraftType: flightData.aircraftType ?? null,
                   registration: flightData.registration ?? null,
                   calendarEventId: event.id ?? null,
+                  calendarEventUpdated: eventUpdated,
                   lastPolledAt: new Date(),
                 },
               })
@@ -334,13 +385,42 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
 
               console.log(`[calendar] Processing train ${detected.trainNumber} on ${eventDate} (event: ${event.id ?? 'no-id'})`)
 
-              // Dedup by calendar event ID
+              const eventUpdated = event.updated ? new Date(event.updated) : null
+
+              // Layer 1: dedup by calendar event ID, with CAL-3 edit detection.
               if (event.id) {
                 const existing = await prisma.train.findFirst({
                   where: { userId, calendarEventId: event.id },
                 })
                 if (existing) {
-                  console.log(`[calendar] Train ${detected.trainNumber} on ${eventDate} already in DB by event ID, skipping`)
+                  const stored = existing.calendarEventUpdated?.getTime() ?? null
+                  const incoming = eventUpdated?.getTime() ?? null
+                  const changed = incoming !== null && incoming !== stored
+                  if (!changed) {
+                    console.log(`[calendar] Train ${detected.trainNumber} on ${eventDate} already in DB by event ID, skipping`)
+                    continue
+                  }
+                  console.log(`[calendar] Train ${detected.trainNumber} on ${eventDate} changed in GCal, re-enriching`)
+                  await prisma.train.delete({ where: { id: existing.id } })
+                }
+              }
+
+              // Layer 2 (CAL-7): fallback dedup by train number + date range,
+              // mirroring the flight loop — catches manual vs calendar dupes.
+              {
+                const dayStart = new Date(`${eventDate}T00:00:00Z`).getTime()
+                const byTrain = await prisma.train.findFirst({
+                  where: {
+                    userId,
+                    trainNumber: detected.trainNumber,
+                    departureScheduled: {
+                      gte: new Date(dayStart - 36 * 3600 * 1000),
+                      lt:  new Date(dayStart + 60 * 3600 * 1000),
+                    },
+                  },
+                })
+                if (byTrain) {
+                  console.log(`[calendar] Train ${detected.trainNumber} on ${eventDate} already in DB by number+date, skipping`)
                   continue
                 }
               }
@@ -356,6 +436,7 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                   data: {
                     userId,
                     calendarEventId: event.id ?? null,
+                    calendarEventUpdated: eventUpdated,
                     trainNumber: detected.trainNumber,
                     trainName: null,
                     origin: detected.boardingStation ?? '',
@@ -431,6 +512,7 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                 data: {
                   userId,
                   calendarEventId: event.id ?? null,
+                  calendarEventUpdated: eventUpdated,
                   trainNumber: schedule.trainNumber,
                   trainName: schedule.trainName ?? null,
                   origin,
@@ -469,6 +551,13 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
     console.error(`Calendar sync failed for user ${userId}:`, msg)
     await recordSyncResult(userId, flightsAdded + trainsAdded, msg)
     return { flightsFound: flightsAdded, trainsFound: trainsAdded }
+  }
+
+  // CAL-6: persist the token Google handed back so the next sync is incremental.
+  if (nextSyncToken) {
+    await prisma.calendarConnection
+      .update({ where: { id: connection.id }, data: { syncToken: nextSyncToken } })
+      .catch((err) => console.error(`Failed to persist syncToken for user ${userId}:`, err))
   }
 
   await recordSyncResult(userId, flightsAdded + trainsAdded, null)

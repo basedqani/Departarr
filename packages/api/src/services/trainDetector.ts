@@ -177,19 +177,56 @@ export function detectTrainsInText(text: string): DetectedTrain[] {
     }
   }
 
-  // Pattern 4: Known train names — also try to extract a nearby number
+  // Pattern 4: Known train names — extract an associated train number, but only
+  // when the number is genuinely tied to the train (CAL-8). The old "any 1-4
+  // digit within 40 chars" grabbed platform/car/seat numbers ("Empire Builder,
+  // platform 12"). We now require either:
+  //   (a) the number is immediately adjacent to the name (e.g. "Empire Builder
+  //       8" / "8 Empire Builder", allowing a #/No. token), or
+  //   (b) the number is introduced by a train-number keyword (#, No., Number,
+  //       Train, Amtrak) — e.g. "Empire Builder (Train #8)".
+  // A bare number sitting next to a platform/car keyword is rejected.
+  const NUM_KEYWORD = /(?:#|No\.?|Number|Train|Amtrak)\s*$/i
+  const NON_TRAIN_KEYWORD = /\b(?:platform|track|car|coach|seat|gate|room|roomette|berth)\b/i
   for (const name of SORTED_TRAIN_NAMES) {
     const nameRe = new RegExp(`\\b${name.replace(/\s+/g, '\\s+')}\\b`, 'gi')
     let nameMatch: RegExpExecArray | null
     while ((nameMatch = nameRe.exec(text)) !== null) {
-      // Look for a 1-4 digit number within 40 chars of the train name
-      const context = text.substring(
-        Math.max(0, nameMatch.index - 40),
-        nameMatch.index + nameMatch[0].length + 40
-      )
-      const nearbyNum = /\b(\d{1,4})\b/.exec(context)
-      if (nearbyNum) {
-        results.push({ trainNumber: nearbyNum[1], rawMatch: `${name} ${nearbyNum[1]}` })
+      const nameStart = nameMatch.index
+      const nameEnd = nameMatch.index + nameMatch[0].length
+
+      // (a) Adjacent number directly after the name: "Empire Builder 8",
+      // "Empire Builder #8", "Empire Builder No. 8".
+      const after = text.substring(nameEnd, nameEnd + 12)
+      const adjAfter = /^\s*(?:#|No\.?\s*|Number\s*)?(\d{1,4})\b/.exec(after)
+      // (a') Adjacent number directly before the name: "8 Empire Builder".
+      const beforeWin = text.substring(Math.max(0, nameStart - 8), nameStart)
+      const adjBefore = /(?:#|No\.?\s*)?(\d{1,4})\s*$/.exec(beforeWin)
+
+      let trainNumber: string | undefined
+      if (adjAfter) {
+        trainNumber = adjAfter[1]
+      } else if (adjBefore) {
+        trainNumber = adjBefore[1]
+      } else {
+        // (b) Keyword-introduced number anywhere within 40 chars of the name.
+        const ctxStart = Math.max(0, nameStart - 40)
+        const context = text.substring(ctxStart, nameEnd + 40)
+        const re = /(\d{1,4})\b/g
+        let nm: RegExpExecArray | null
+        while ((nm = re.exec(context)) !== null) {
+          const preceding = context.substring(Math.max(0, nm.index - 12), nm.index)
+          // Reject numbers introduced by a platform/car/etc keyword.
+          if (NON_TRAIN_KEYWORD.test(preceding)) continue
+          if (NUM_KEYWORD.test(preceding)) {
+            trainNumber = nm[1]
+            break
+          }
+        }
+      }
+
+      if (trainNumber) {
+        results.push({ trainNumber, rawMatch: `${name} ${trainNumber}` })
       }
     }
   }

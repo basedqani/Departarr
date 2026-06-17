@@ -69,6 +69,7 @@ model Flight {
   seat               String?
   confirmationCode   String?
   calendarEventId    String?       // Google Calendar event.id for dedup
+  calendarEventUpdated DateTime?   // Google Calendar event.updated — re-enrich on change (CAL-3)
   lastPolledAt       DateTime?
   icaoHex            String?       // ADS-B ICAO 24-bit hex (when known)
   // ── Dual-engine tracking phase state (persisted across restarts) ──
@@ -168,6 +169,7 @@ model Train {
   seat                String?
   confirmationCode    String?
   calendarEventId     String?
+  calendarEventUpdated DateTime?
   lastPolledAt        DateTime?
   createdAt           DateTime      @default(now())
   events              TrainEvent[]

@@ -59,11 +59,15 @@ interface Props {
 export function Layout({ children }: Props): React.ReactElement {
   const location = useLocation()
 
-  // Trigger a silent calendar sync once per browser session so new flights
-  // from Google Calendar are picked up whenever the user opens the app.
+  // Trigger a silent calendar sync on app open so new flights from Google
+  // Calendar are picked up. Throttled to at most once per MIN_SYNC_INTERVAL via
+  // a localStorage timestamp (shared across tabs), so opening multiple tabs no
+  // longer kicks off a sync each time (CAL-5).
   useEffect(() => {
-    if (sessionStorage.getItem('cal-synced')) return
-    sessionStorage.setItem('cal-synced', '1')
+    const MIN_SYNC_INTERVAL_MS = 15 * 60 * 1000
+    const last = Number(localStorage.getItem('cal-last-sync') ?? '0')
+    if (Date.now() - last < MIN_SYNC_INTERVAL_MS) return
+    localStorage.setItem('cal-last-sync', String(Date.now()))
     api.calendar.sync().catch(() => { /* silent — user may not have calendar connected */ })
   }, [])
   const isFlightDetail = location.pathname.startsWith('/flights/') && location.pathname !== '/flights/add'
