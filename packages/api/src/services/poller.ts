@@ -3,6 +3,7 @@ import { fetchFlightById, lookupFlight, type FlightData } from './flightAware.js
 import { sendPushToUser, sendPushToShareSubscribers, buildPushNotification } from './webPush.js'
 import { wsClients } from '../lib/wsClients.js'
 import { isActiveProviderOverBudget } from './flightAware.js'
+import { normalizeStatus } from '../lib/flightStatus.js'
 import type { Flight } from '@prisma/client'
 
 const POLL_INTERVAL_MS = 60_000
@@ -226,7 +227,10 @@ async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> 
     await prisma.flight.update({
       where: { id: flight.id },
       data: {
-        status: fresh.status,
+        status: normalizeStatus(fresh.status).status,
+        // DE-2: persist registration so ADSB hex/reg lookup works. Only
+        // overwrite when the provider actually supplies a value.
+        registration: fresh.registration ?? flight.registration ?? null,
         gateDeparture: fresh.gateDeparture ?? null,
         gateArrival: fresh.gateArrival ?? null,
         terminalDeparture: fresh.terminalDeparture ?? null,
@@ -292,7 +296,9 @@ async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> 
     prisma.flight.update({
       where: { id: flight.id },
       data: {
-        status: fresh.status,
+        status: normalizeStatus(fresh.status).status,
+        // DE-2: persist registration for ADSB lookup.
+        registration: fresh.registration ?? flight.registration ?? null,
         gateDeparture: fresh.gateDeparture ?? null,
         gateArrival: fresh.gateArrival ?? null,
         terminalDeparture: fresh.terminalDeparture ?? null,

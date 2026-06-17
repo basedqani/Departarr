@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs'
 import { createRequire } from 'module'
-import { getSetting } from '../lib/settings.js'
+import { getSetting, getSettingWithEnvFallback } from '../lib/settings.js'
+import { incrementUsage } from '../lib/apiBudget.js'
 
 const AEROAPI_BASE = 'https://aeroapi.flightaware.com/aeroapi'
 
@@ -10,16 +11,42 @@ export interface GateEnrichment {
   terminalDeparture?: string
   terminalArrival?: string
   baggageClaim?: string
-  estimatedOut?: Date    // pushback from gate
-  estimatedIn?: Date     // arrived at gate
+  estimatedOut?: Date    // estimated pushback from gate
+  actualOut?: Date       // actual pushback from gate (gate-out / OUT)
+  estimatedIn?: Date     // estimated arrival at gate
+  actualIn?: Date        // actual arrival at gate (gate-in / IN)
   actualOff?: Date       // wheels off
   actualOn?: Date        // wheels on
   status?: string
 }
 
-/** Returns true if FLIGHTAWARE_API_KEY is configured */
-export function hasFlightAwareKey(): boolean {
-  return !!(process.env.FLIGHTAWARE_API_KEY)
+/**
+ * Resolve the FlightAware API key consistently with the poller: DB setting
+ * first (`flightaware_api_key`), then env (`FLIGHTAWARE_API_KEY`). A DB-only key
+ * is enough to enable enrichment.
+ */
+async function resolveFlightAwareKey(): Promise<string | null> {
+  return getSettingWithEnvFallback('flightaware_api_key', 'FLIGHTAWARE_API_KEY').catch(
+    () => process.env.FLIGHTAWARE_API_KEY ?? null,
+  )
+}
+
+/**
+ * Returns true if a FlightAware key is configured (DB setting OR env var).
+ * Async so it matches the poller's `getSettingWithEnvFallback` resolution —
+ * a DB-only key enables enrichment.
+ */
+export async function hasFlightAwareKey(): Promise<boolean> {
+  return !!(await resolveFlightAwareKey())
+}
+
+/** Returns true for stub/demo flight ids that must never hit the real AeroAPI. */
+function isStubFaFlightId(faFlightId: string): boolean {
+  return (
+    faFlightId.startsWith('STUB-') ||
+    faFlightId.startsWith('ADB:') ||
+    /mock/i.test(faFlightId)
+  )
 }
 
 /** Returns true if mock mode is active (env var OR admin DB setting) */
@@ -44,7 +71,9 @@ function mapFlightToEnrichment(flight: Record<string, any>): GateEnrichment {
     terminalArrival: flight.terminal_dest ?? undefined,
     baggageClaim: flight.baggage_claim ?? undefined,
     estimatedOut: parseDateOrUndefined(flight.estimated_out),
+    actualOut: parseDateOrUndefined(flight.actual_out),
     estimatedIn: parseDateOrUndefined(flight.estimated_in),
+    actualIn: parseDateOrUndefined(flight.actual_in),
     actualOff: parseDateOrUndefined(flight.actual_off),
     actualOn: parseDateOrUndefined(flight.actual_on),
     status: flight.status ?? undefined,
@@ -95,11 +124,20 @@ export async function fetchGateEnrichment(
     return fetchGateEnrichmentMock()
   }
 
-  const key = apiKey ?? process.env.FLIGHTAWARE_API_KEY
+  // DE-11: never make a real AeroAPI call for stub/demo/mock flight ids.
+  if (isStubFaFlightId(faFlightId)) {
+    return null
+  }
+
+  const key = apiKey ?? (await resolveFlightAwareKey())
   if (!key) {
     console.warn('[flightAwareGates] No API key available; skipping gate enrichment')
     return null
   }
+
+  // DE-1: this is a billable AeroAPI call ($0.005). Count it BEFORE the fetch so
+  // we meter even on error — keeps enrichment spend visible to the budget meter.
+  await incrementUsage('aeroapi')
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 8000)

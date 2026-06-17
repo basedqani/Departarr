@@ -14,3 +14,6 @@ data/
 # local tooling (cloudflared)
 .tools/
 .tmp_*
+
+# agent worktrees & local docs
+.claude/worktrees/

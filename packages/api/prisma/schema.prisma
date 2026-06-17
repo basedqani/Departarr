@@ -70,6 +70,11 @@ model Flight {
   confirmationCode   String?
   calendarEventId    String?       // Google Calendar event.id for dedup
   lastPolledAt       DateTime?
+  icaoHex            String?       // ADS-B ICAO 24-bit hex (when known)
+  // ── Dual-engine tracking phase state (persisted across restarts) ──
+  trackingPhase      String?       // SCHEDULED | IN_TERMINAL | EN_ROUTE | ARRIVING | ARRIVED
+  enrichmentCount    Int           @default(0)
+  wakeAt             DateTime?     // EN_ROUTE private-flight sleep target
   createdAt          DateTime      @default(now())
   events             FlightEvent[]
   shareTokens        ShareToken[]

@@ -1,8 +1,8 @@
 import { getSettingWithEnvFallback } from '../lib/settings.js'
 import { incrementUsage, isOverBudget } from '../lib/apiBudget.js'
+import { normalizeStatus } from '../lib/flightStatus.js'
 import { generateStubFlight } from './stubData.js'
 import { lookupAeroDataBox, lookupAllLegsAeroDataBox, getAeroDataBoxKey, ADB_PROVIDER } from './aeroDataBox.js'
-import { normalizeStatus } from '../lib/flightStatus.js'
 
 const AEROAPI_BASE = 'https://aeroapi.flightaware.com/aeroapi'
 
@@ -65,8 +65,44 @@ function parseDate(val: string | null | undefined): Date | undefined {
   return isNaN(d.getTime()) ? undefined : d
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapFlight(f: any): FlightData {
+/**
+ * Typed subset of the FlightAware AeroAPI v4 `flights[]` object that we consume.
+ * Defined explicitly (GEN-7) so the FA boundary is no longer `any`.
+ */
+interface FaAirportRef {
+  code_iata?: string | null
+  code?: string | null
+}
+
+interface FaFlight {
+  fa_flight_id?: string | null
+  operator_iata?: string | null
+  flight_number?: string | number | null
+  origin?: FaAirportRef | null
+  destination?: FaAirportRef | null
+  scheduled_out?: string | null
+  scheduled_off?: string | null
+  estimated_out?: string | null
+  estimated_off?: string | null
+  actual_out?: string | null
+  actual_off?: string | null
+  scheduled_in?: string | null
+  scheduled_on?: string | null
+  estimated_in?: string | null
+  estimated_on?: string | null
+  actual_in?: string | null
+  actual_on?: string | null
+  status?: string | null
+  gate_origin?: string | null
+  gate_destination?: string | null
+  terminal_origin?: string | null
+  terminal_destination?: string | null
+  baggage_claim?: string | null
+  aircraft_type?: string | null
+  registration?: string | null
+}
+
+function mapFlight(f: FaFlight): FlightData {
   return {
     faFlightId: f.fa_flight_id ?? undefined,
     airlineIata: f.operator_iata ?? undefined,
@@ -74,10 +110,10 @@ function mapFlight(f: any): FlightData {
     origin: f.origin?.code_iata ?? f.origin?.code ?? '',
     destination: f.destination?.code_iata ?? f.destination?.code ?? '',
     // Gate OUT/IN (departure/arrival times)
-    departureScheduled: new Date(f.scheduled_out ?? f.scheduled_off),
+    departureScheduled: new Date(f.scheduled_out ?? f.scheduled_off ?? NaN),
     departureEstimated: parseDate(f.estimated_out ?? f.estimated_off),
     departureActual: parseDate(f.actual_out ?? f.actual_off),
-    arrivalScheduled: new Date(f.scheduled_in ?? f.scheduled_on),
+    arrivalScheduled: new Date(f.scheduled_in ?? f.scheduled_on ?? NaN),
     arrivalEstimated: parseDate(f.estimated_in ?? f.estimated_on),
     arrivalActual: parseDate(f.actual_in ?? f.actual_on),
     // OOOI wheel-off/on times
@@ -152,7 +188,7 @@ async function lookupFlightAware(ident: string, date: string): Promise<FlightDat
   const flights = data.flights ?? []
   if (flights.length === 0) return null
 
-  return mapFlight(flights[0])
+  return mapFlight(flights[0] as FaFlight)
 }
 
 /**
@@ -174,7 +210,7 @@ export async function lookupAllFlightLegs(
       const res = await fetch(url, { headers: { 'x-apikey': apiKey } })
       if (!res.ok) return []
       const data = await res.json() as { flights?: unknown[] }
-      return (data.flights ?? []).map((f) => mapFlight(f as Parameters<typeof mapFlight>[0]))
+      return (data.flights ?? []).map((f) => mapFlight(f as FaFlight))
     } catch {
       return []
     }
@@ -234,6 +270,6 @@ export async function fetchFlightById(faFlightId: string): Promise<FlightData | 
   const data = await res.json() as { flights?: unknown[] }
   const flights = data.flights ?? []
   if (flights.length === 0) return null
-  return mapFlight(flights[0])
+  return mapFlight(flights[0] as FaFlight)
 }
 

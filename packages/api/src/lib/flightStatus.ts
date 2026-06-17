@@ -10,7 +10,7 @@
 // AC: a normalized status NEVER contains "/" or "_" beyond the canonical set,
 // and the two providers produce identical vocabulary.
 //
-// NOTE (cross-epic): the dual-engine orchestrator will import this module. Keep
+// NOTE (cross-epic): the dual-engine orchestrator imports this module. Keep
 // it dependency-free and pure.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -46,8 +46,9 @@ export function normalizeStatus(raw: string | undefined | null): NormalizedStatu
   // Collapse internal whitespace per part so "en route" → "enroute".
   const parts = lower.split(/[/_]/).map((p) => p.replace(/\s+/g, '')).filter(Boolean)
 
-  // A delay can be expressed as its own token ("delayed") in a compound string.
-  const delayed = parts.some((p) => p === 'delayed' || p === 'delay')
+  // A delay can be expressed as its own token ("delayed") in a compound string,
+  // or buried in noise like "En Route (Delayed)". Detect it orthogonally.
+  const delayed = parts.some((p) => p === 'delayed' || p === 'delay') || /delay/.test(lower)
 
   // Find the first part that maps to a real base state.
   for (const part of parts) {
@@ -59,6 +60,11 @@ export function normalizeStatus(raw: string | undefined | null): NormalizedStatu
   const collapsed = lower.replace(/[\s/_]+/g, '')
   const mappedCollapsed = mapBase(collapsed)
   if (mappedCollapsed) return { status: mappedCollapsed, delayed }
+
+  // Substring fallback for noisy real-world strings the token parser misses,
+  // e.g. "Landed @ 12:30" or "En Route (Delayed)". Ordered terminal-first.
+  const sub = mapSubstring(lower)
+  if (sub) return { status: sub, delayed }
 
   // A bare "delayed" with no base state → treat as still scheduled, delayed.
   return { status: 'scheduled', delayed }
@@ -72,12 +78,14 @@ function mapBase(s: string): CanonicalStatus | undefined {
     case 'scheduled':
     case 'planned':
     case 'filed':
+    case 'ontime':
     case 'delayed':           // handled as flag, but as a bare base → scheduled
     case 'delay':
       return s === 'delayed' || s === 'delay' ? undefined : 'scheduled'
 
     case 'checkin':
     case 'boarding':
+    case 'gateopen':
       return 'boarding'
 
     case 'gateclosed':
@@ -85,6 +93,9 @@ function mapBase(s: string): CanonicalStatus | undefined {
     case 'pushedback':
     case 'pushback':
     case 'out':
+    case 'outblock':
+    case 'offblock':
+    case 'active':
       return 'departed'
 
     case 'taxiing':
@@ -95,8 +106,12 @@ function mapBase(s: string): CanonicalStatus | undefined {
     case 'enroute':
     case 'airborne':
     case 'inair':
+    case 'inflight':
+    case 'cruise':
     case 'approaching':
     case 'off':
+    case 'wheelsoff':
+    case 'takeoff':
       return 'en_route'
 
     // Terminal arrival — reconcile `landed` → `arrived` (NOTE-7).
@@ -104,6 +119,7 @@ function mapBase(s: string): CanonicalStatus | undefined {
     case 'arrived':
     case 'on':
     case 'in':
+    case 'onblock':
     case 'gatearrival':
       return 'arrived'
 
@@ -119,4 +135,19 @@ function mapBase(s: string): CanonicalStatus | undefined {
     default:
       return undefined
   }
+}
+
+/** Robust substring scan for noisy provider strings the token parser misses
+ *  (e.g. "Landed @ 12:30", "En Route (Delayed)"). Ordered terminal-first so a
+ *  compound like "diverted then arrived" resolves to the most decisive state. */
+function mapSubstring(s: string): CanonicalStatus | undefined {
+  if (/cancel/.test(s)) return 'cancelled'
+  if (/divert|redirect/.test(s)) return 'diverted'
+  if (/arriv|landed|on ?block|gate ?arrival/.test(s)) return 'arrived'
+  if (/taxi/.test(s)) return 'taxiing'
+  if (/en ?route|airborne|in ?air|in ?flight|cruise|approach/.test(s)) return 'en_route'
+  if (/depart|pushed ?back|wheels ?off|take ?off|off ?block|\bactive\b/.test(s)) return 'departed'
+  if (/board|gate ?open|check ?in/.test(s)) return 'boarding'
+  if (/schedul|planned|on ?time|expected|filed/.test(s)) return 'scheduled'
+  return undefined
 }
