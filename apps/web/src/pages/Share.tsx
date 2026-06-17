@@ -4,7 +4,7 @@ import { lazy, Suspense, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
-import { formatDateTime, formatTimeInZone, getAirportTz, getAmtrakStationTz } from '../lib/format'
+import { formatDateTimeLocal, formatTimeInZone, getAirportTz, getAmtrakStationTz } from '../lib/format'
 import type { AircraftPosition } from '../lib/api'
 import { getAirport } from '../lib/airports'
 import { useCountdown } from '../hooks/useCountdown'
@@ -106,7 +106,7 @@ export function SharePage(): React.ReactElement {
   const train = data?.train
 
   // Countdown — must be before any early return (Rules of Hooks)
-  const countdown = useCountdown(flight)
+  const countdown = useCountdown(flight, flight ? getAirportTz(flight.origin) : undefined)
 
   // Poll live position if we have a flight
   useEffect(() => {
@@ -276,7 +276,7 @@ export function SharePage(): React.ReactElement {
                 {flight.events.slice(0, 5).map((ev, i) => (
                   <div key={ev.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.45rem 0', borderBottom: i < 4 ? '1px solid var(--hairline)' : 'none', fontSize: '0.85rem' }}>
                     <span style={{ textTransform: 'capitalize', fontWeight: 500 }}>{ev.eventType.replace(/_/g, ' ')}</span>
-                    <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{formatDateTime(ev.occurredAt)}</span>
+                    <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{formatDateTimeLocal(ev.occurredAt)}</span>
                   </div>
                 ))}
               </div>
@@ -329,7 +329,7 @@ export function SharePage(): React.ReactElement {
                 {train.events.slice(0, 5).map((ev, i) => (
                   <div key={ev.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.45rem 0', borderBottom: i < 4 ? '1px solid var(--hairline)' : 'none', fontSize: '0.85rem' }}>
                     <span style={{ textTransform: 'capitalize', fontWeight: 500 }}>{ev.eventType.replace(/_/g, ' ')}</span>
-                    <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{formatDateTime(ev.occurredAt)}</span>
+                    <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{formatDateTimeLocal(ev.occurredAt)}</span>
                   </div>
                 ))}
               </div>

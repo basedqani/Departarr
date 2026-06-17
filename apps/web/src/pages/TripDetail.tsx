@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import type { Flight, Train, TripWithLegs, TrainStop } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
 import { AirlineLogo } from '../components/AirlineLogo'
-import { formatLocalTime, formatDate, formatDuration, getAirportTz } from '../lib/format'
+import { formatLocalTime, formatDate, formatDuration, getAirportTz, getAmtrakStationTz } from '../lib/format'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,10 +14,12 @@ type TripLegItem =
   | { legType: 'flight'; data: Flight; sortKey: number }
   | { legType: 'train'; data: Train; sortKey: number }
 
-// NOTE: Amtrak stations don't have a standardised timezone map.
-// For v1, train times are displayed in the browser's local timezone.
-function fmtLocalTimeBrowser(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+// Train times are rendered in the station's own timezone (resolved via the
+// Amtrak station tz map). When a station code is unknown the formatter falls
+// back to UTC with an explicit "UTC" label — never the viewer's machine zone —
+// so a departure time is never silently shifted.
+function fmtTrainTime(iso: string, stationCode: string): string {
+  return formatLocalTime(iso, getAmtrakStationTz(stationCode))
 }
 
 // ─── Connection helpers ────────────────────────────────────────────────────────
@@ -150,8 +152,8 @@ function InlineTrainDetail({ train, connection }: { train: Train; connection: Co
     catch { return [] }
   })()
 
-  const depTime = fmtLocalTimeBrowser(train.departureActual ?? train.departureEstimated ?? train.departureScheduled)
-  const arrTime = fmtLocalTimeBrowser(train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled)
+  const depTime = fmtTrainTime(train.departureActual ?? train.departureEstimated ?? train.departureScheduled, train.origin)
+  const arrTime = fmtTrainTime(train.arrivalActual ?? train.arrivalEstimated ?? train.arrivalScheduled, train.destination)
   const durationMs = new Date(train.arrivalScheduled).getTime() - new Date(train.departureScheduled).getTime()
 
   return (
@@ -553,7 +555,7 @@ export function TripDetailPage(): React.ReactElement {
 
             // Train leg
             const train = leg.data
-            const depTime = fmtLocalTimeBrowser(train.departureActual ?? train.departureEstimated ?? train.departureScheduled)
+            const depTime = fmtTrainTime(train.departureActual ?? train.departureEstimated ?? train.departureScheduled, train.origin)
 
             return (
               <div key={legId}>

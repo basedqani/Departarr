@@ -812,7 +812,7 @@ function weatherEmoji(code: number): string {
   return '⛈'
 }
 
-function WeatherSection({ weather }: { weather: WeatherResult }): React.ReactElement | null {
+function WeatherSection({ weather, tz }: { weather: WeatherResult; tz: string | null }): React.ReactElement | null {
   const tempUnit = (localStorage.getItem('tempUnit') as 'F' | 'C') ?? 'F'
   const w = weather.weather[0]
   if (!w) return null
@@ -827,7 +827,7 @@ function WeatherSection({ weather }: { weather: WeatherResult }): React.ReactEle
           <span className="weather-temp">{Math.round(w.temp)}°{tempUnit}</span>
           <span className="weather-label">{weatherLabel(w.code)}</span>
           <span className="weather-wind">{Math.round(w.wind)} km/h</span>
-          <span className="weather-time">{new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <span className="weather-time">{formatLocalTime(w.time, tz)}</span>
         </div>
       </div>
     </section>
@@ -879,7 +879,7 @@ export function FlightDetailPage(): React.ReactElement {
 
   // Countdown hook MUST run unconditionally before any early return (Rules of
   // Hooks). It tolerates an undefined flight while the query is loading.
-  const countdown = useCountdown(flight)
+  const countdown = useCountdown(flight, flight ? getAirportTz(flight.origin) : undefined)
 
   if (isLoading) return (
     <div className="loading" style={{ paddingTop: '4rem' }}>
@@ -1220,7 +1220,7 @@ export function FlightDetailPage(): React.ReactElement {
         </div>
 
         {/* Weather at destination */}
-        {weather && <WeatherSection weather={weather} />}
+        {weather && <WeatherSection weather={weather} tz={getAirportTz(weather.airport)} />}
 
         {/* Carbon footprint estimate */}
         <CarbonSection origin={flight.origin} destination={flight.destination} />

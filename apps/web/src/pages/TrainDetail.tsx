@@ -11,7 +11,7 @@ import type { GtfsStop } from '../components/TrainMap'
 import { AddToTripDialog } from '../components/AddToTripDialog'
 
 // fmtTime is used for stop timelines and events where we pass the timezone explicitly
-function fmtTime(iso: string | null | undefined, tz: string): string {
+function fmtTime(iso: string | null | undefined, tz: string | null): string {
   if (!iso) return '--:--'
   return formatTimeInZone(iso, tz)
 }
@@ -43,7 +43,7 @@ function weatherEmoji(code: number): string {
   return '⛈'
 }
 
-function WeatherSection({ weather }: { weather: WeatherResult }): React.ReactElement | null {
+function WeatherSection({ weather, tz }: { weather: WeatherResult; tz: string | null }): React.ReactElement | null {
   const tempUnit = (localStorage.getItem('tempUnit') as 'F' | 'C') ?? 'F'
   const w = weather.weather[0]
   if (!w) return null
@@ -58,7 +58,7 @@ function WeatherSection({ weather }: { weather: WeatherResult }): React.ReactEle
           <span className="weather-temp">{Math.round(w.temp)}°{tempUnit}</span>
           <span className="weather-label">{weatherLabel(w.code)}</span>
           <span className="weather-wind">{Math.round(w.wind)} km/h</span>
-          <span className="weather-time">{new Date(w.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <span className="weather-time">{fmtTime(w.time, tz)}</span>
         </div>
       </div>
     </section>
@@ -250,7 +250,7 @@ function BookingCard({ trainId, seat, confirmationCode }: { trainId: string; sea
 
 // ─── Stop timeline ────────────────────────────────────────────────────────────
 
-function StopTimeline({ stops, originTz }: { stops: TrainStop[]; originTz: string }): React.ReactElement {
+function StopTimeline({ stops, originTz }: { stops: TrainStop[]; originTz: string | null }): React.ReactElement {
   return (
     <div className="card" style={{ marginBottom: '0.875rem' }}>
       <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'var(--text-muted)', marginBottom: '1rem' }}>
@@ -522,7 +522,7 @@ export function TrainDetailPage(): React.ReactElement {
         {stops.length > 0 && <StopTimeline stops={stops} originTz={originTz} />}
 
         {/* Weather at destination */}
-        {weather && <WeatherSection weather={weather} />}
+        {weather && <WeatherSection weather={weather} tz={destTz} />}
 
         {/* Event history */}
         {train.events.length > 0 && (
