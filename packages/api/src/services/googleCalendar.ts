@@ -385,23 +385,16 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
               if (eventStartDateTime) {
                 departureScheduled = new Date(eventStartDateTime)
 
-                const parseGtfsMs = (t: string): number => {
-                  const parts = t.split(':').map(Number)
-                  return ((parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0)) * 1000
-                }
-
                 const eventMs = new Date(eventStartDateTime).getTime()
-                const scheduleOriginMs = schedule.departureScheduled.getTime()
-                const originStop = schedule.stops[0]
-                const originGtfsMs = parseGtfsMs(originStop.scheduledDep ?? originStop.scheduledArr ?? '0:0:0')
 
                 let bestStop = schedule.stops[0]
                 let bestDiff = Infinity
                 for (const stop of schedule.stops) {
-                  const timeStr = stop.scheduledDep ?? stop.scheduledArr
-                  if (!timeStr) continue
-                  // Compute this stop's UTC time: origin UTC + (stop GTFS offset - origin GTFS offset)
-                  const stopUtcMs = scheduleOriginMs + (parseGtfsMs(timeStr) - originGtfsMs)
+                  // Each stop now carries an absolute ISO instant already computed
+                  // in its own timezone — compare directly, no overflow math.
+                  const iso = stop.schDep ?? stop.schArr
+                  if (!iso) continue
+                  const stopUtcMs = new Date(iso).getTime()
                   const diff = Math.abs(stopUtcMs - eventMs)
                   if (diff < bestDiff) {
                     bestDiff = diff
@@ -426,15 +419,9 @@ export async function syncCalendarForUser(userId: string): Promise<SyncResult> {
                 if (boardingStop) {
                   origin = boardingStop.code
                   originName = boardingStop.name
-                  if (boardingStop.scheduledDep) {
-                    const parseGtfsMs2 = (t: string): number => {
-                      const parts = t.split(':').map(Number)
-                      return ((parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0)) * 1000
-                    }
-                    const originStop = schedule.stops[0]
-                    const originMs = parseGtfsMs2(originStop.scheduledDep ?? originStop.scheduledArr ?? '0:0:0')
-                    const boardingMs = parseGtfsMs2(boardingStop.scheduledDep)
-                    departureScheduled = new Date(schedule.departureScheduled.getTime() + (boardingMs - originMs))
+                  const boardingIso = boardingStop.schDep ?? boardingStop.schArr
+                  if (boardingIso) {
+                    departureScheduled = new Date(boardingIso)
                   }
                   console.log(`[calendar] Train ${detected.trainNumber}: text-based boarding → ${origin} (${originName})`)
                 }

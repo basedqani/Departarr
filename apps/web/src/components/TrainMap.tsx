@@ -5,8 +5,9 @@ export interface GtfsStop {
   name: string
   lat: number
   lon: number
-  scheduledArr?: string // "HH:MM:SS" may exceed 24:00
-  scheduledDep?: string
+  tz?: string
+  schArr?: string | null // absolute ISO-8601 UTC
+  schDep?: string | null // absolute ISO-8601 UTC
   stopSequence: number
 }
 
@@ -26,18 +27,11 @@ const TRAIN_ICON_URI = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
 
-// Parse "HH:MM:SS" time string (hours may exceed 23) relative to a base date,
-// returning a Date. Returns null if input is falsy.
-function parseGtfsTime(timeStr: string | undefined, baseDate: Date): Date | null {
-  if (!timeStr) return null
-  const parts = timeStr.split(':')
-  if (parts.length < 2) return null
-  const h = parseInt(parts[0], 10)
-  const m = parseInt(parts[1], 10)
-  const s = parseInt(parts[2] ?? '0', 10)
-  const d = new Date(baseDate)
-  d.setHours(h, m, s, 0)
-  return d
+// Parse an absolute ISO-8601 instant. Returns null if input is falsy/invalid.
+function parseStopInstant(iso: string | null | undefined): Date | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? null : d
 }
 
 // Compute where the train currently is along the route.
@@ -60,17 +54,14 @@ function computeTrainPosition(
     return [first.lon, first.lat]
   }
 
-  // In transit: interpolate by scheduled times
-  const baseDate = new Date(departureScheduled)
-  // Strip time — base date is just the calendar date
-  baseDate.setHours(0, 0, 0, 0)
-
+  // In transit: interpolate by absolute scheduled instants
+  void departureScheduled
   const now = Date.now()
 
   // Find the segment we're on: last stop whose scheduled dep/arr is in the past
   let prevIdx = 0
   for (let i = 0; i < stops.length; i++) {
-    const t = parseGtfsTime(stops[i].scheduledDep ?? stops[i].scheduledArr, baseDate)
+    const t = parseStopInstant(stops[i].schDep ?? stops[i].schArr)
     if (t && t.getTime() <= now) {
       prevIdx = i
     } else {
@@ -86,8 +77,8 @@ function computeTrainPosition(
 
   const prev = stops[prevIdx]
   const next = stops[nextIdx]
-  const depTime = parseGtfsTime(prev.scheduledDep ?? prev.scheduledArr, baseDate)
-  const arrTime = parseGtfsTime(next.scheduledArr ?? next.scheduledDep, baseDate)
+  const depTime = parseStopInstant(prev.schDep ?? prev.schArr)
+  const arrTime = parseStopInstant(next.schArr ?? next.schDep)
 
   let frac = 0.5
   if (depTime && arrTime && arrTime.getTime() > depTime.getTime()) {
@@ -116,13 +107,12 @@ function classifyStops(
     return stops.map((_, i) => (i === 0 ? 'current' : 'future'))
   }
 
-  const baseDate = new Date(departureScheduled)
-  baseDate.setHours(0, 0, 0, 0)
+  void departureScheduled
   const now = Date.now()
 
   let lastPassedIdx = -1
   for (let i = 0; i < stops.length; i++) {
-    const t = parseGtfsTime(stops[i].scheduledDep ?? stops[i].scheduledArr, baseDate)
+    const t = parseStopInstant(stops[i].schDep ?? stops[i].schArr)
     if (t && t.getTime() <= now) lastPassedIdx = i
   }
 

@@ -10,6 +10,13 @@ import { StatusBadge } from '../components/StatusBadge'
 type Step = 'form' | 'pick-leg' | 'confirm'
 type AddMode = 'flight' | 'train'
 
+/** Format a stop's absolute ISO time in its own timezone as HH:MM (24h). */
+function fmtStopTime(iso: string | null | undefined, tz: string | undefined, fallbackCode: string): string {
+  if (!iso) return ''
+  const zone = tz ?? getAmtrakStationTz(fallbackCode)
+  return new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
+}
+
 function PlaneIcon(): React.ReactElement {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
@@ -382,7 +389,7 @@ export function AddFlightPage(): React.ReactElement {
                     >
                       {trainPreview.stops.map((stop, i) => (
                         <option key={`${stop.code}-${i}`} value={stop.code}>
-                          {stop.code} — {stop.name}{stop.schDep ? ` (${stop.schDep.substring(0, 5)})` : ''}
+                          {stop.code} — {stop.name}{stop.schDep ? ` (${fmtStopTime(stop.schDep, stop.tz, stop.code)})` : ''}
                         </option>
                       ))}
                     </select>
@@ -398,7 +405,7 @@ export function AddFlightPage(): React.ReactElement {
                     >
                       {trainPreview.stops.map((stop, i) => (
                         <option key={`${stop.code}-${i}`} value={stop.code}>
-                          {stop.code} — {stop.name}{(stop.schDep ?? stop.schArr) ? ` (${(stop.schDep ?? stop.schArr)!.substring(0, 5)})` : ''}
+                          {stop.code} — {stop.name}{(stop.schDep ?? stop.schArr) ? ` (${fmtStopTime(stop.schDep ?? stop.schArr, stop.tz, stop.code)})` : ''}
                         </option>
                       ))}
                     </select>
@@ -411,14 +418,10 @@ export function AddFlightPage(): React.ReactElement {
                   <div className="info-cell-label">Departure</div>
                   <div className="info-cell-value">
                     {(() => {
-                      const originStop = trainPreview.stops[0]
                       const sel = trainPreview.stops.find(s => s.code === boardingStopCode)
-                      const gtfsMs = (t: string) => { const [h,m,s] = t.split(':').map(Number); return ((h??0)*3600+(m??0)*60+(s??0))*1000 }
-                      const base = gtfsMs(originStop.schDep ?? originStop.schArr ?? '0:0:0')
-                      const offset = gtfsMs(sel?.schDep ?? sel?.schArr ?? originStop.schDep ?? '0:0:0') - base
-                      const utc = new Date(new Date(trainPreview.departureScheduled).getTime() + offset)
-                      const tz = getAmtrakStationTz(boardingStopCode || trainPreview.origin)
-                      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(utc)
+                      const iso = sel?.schDep ?? sel?.schArr ?? trainPreview.departureScheduled
+                      const tz = sel?.tz ?? getAmtrakStationTz(boardingStopCode || trainPreview.origin)
+                      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(new Date(iso))
                     })()}
                   </div>
                 </div>
@@ -426,15 +429,11 @@ export function AddFlightPage(): React.ReactElement {
                   <div className="info-cell-label">Arrival</div>
                   <div className="info-cell-value">
                     {(() => {
-                      const originStop = trainPreview.stops[0]
                       const lastStop = trainPreview.stops[trainPreview.stops.length - 1]
-                      const sel = trainPreview.stops.find(s => s.code === arrivingStopCode)
-                      const gtfsMs = (t: string) => { const [h,m,s] = t.split(':').map(Number); return ((h??0)*3600+(m??0)*60+(s??0))*1000 }
-                      const base = gtfsMs(originStop.schDep ?? originStop.schArr ?? '0:0:0')
-                      const offset = gtfsMs(sel?.schArr ?? sel?.schDep ?? lastStop.schArr ?? lastStop.schDep ?? '0:0:0') - base
-                      const utc = new Date(new Date(trainPreview.departureScheduled).getTime() + offset)
-                      const tz = getAmtrakStationTz(arrivingStopCode || trainPreview.destination)
-                      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(utc)
+                      const sel = trainPreview.stops.find(s => s.code === arrivingStopCode) ?? lastStop
+                      const iso = sel?.schArr ?? sel?.schDep ?? trainPreview.arrivalScheduled
+                      const tz = sel?.tz ?? getAmtrakStationTz(arrivingStopCode || trainPreview.destination)
+                      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' }).format(new Date(iso))
                     })()}
                   </div>
                 </div>
@@ -449,7 +448,7 @@ export function AddFlightPage(): React.ReactElement {
                   {trainPreview.stops.slice(0, 3).map((stop, i) => (
                     <div key={`${stop.code}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', padding: '0.15rem 0' }}>
                       <span><span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, marginRight: '0.4rem' }}>{stop.code}</span>{stop.name}</span>
-                      {(stop.schDep ?? stop.schArr) && <span style={{ fontFamily: 'var(--font-mono)' }}>{(stop.schDep ?? stop.schArr)!.substring(0, 5)}</span>}
+                      {(stop.schDep ?? stop.schArr) && <span style={{ fontFamily: 'var(--font-mono)' }}>{fmtStopTime(stop.schDep ?? stop.schArr, stop.tz, stop.code)}</span>}
                     </div>
                   ))}
                   {trainPreview.stops.length > 3 && (
@@ -462,7 +461,7 @@ export function AddFlightPage(): React.ReactElement {
                     return (
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', padding: '0.15rem 0' }}>
                         <span><span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, marginRight: '0.4rem' }}>{last.code}</span>{last.name}</span>
-                        {(last.schDep ?? last.schArr) && <span style={{ fontFamily: 'var(--font-mono)' }}>{(last.schDep ?? last.schArr)!.substring(0, 5)}</span>}
+                        {(last.schDep ?? last.schArr) && <span style={{ fontFamily: 'var(--font-mono)' }}>{fmtStopTime(last.schDep ?? last.schArr, last.tz, last.code)}</span>}
                       </div>
                     )
                   })()}

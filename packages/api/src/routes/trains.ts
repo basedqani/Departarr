@@ -125,32 +125,47 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
     const schedule = await lookupTrainSchedule(body.data.trainNumber, body.data.date)
     if (!schedule) return reply.code(404).send({ error: 'Train schedule not found for this date' })
 
-    // If a specific boarding stop was picked, adjust origin and departure time
+    // If a specific boarding stop was picked, adjust origin and departure time.
+    // Each schedule stop now carries an absolute ISO `schDep`/`schArr` already
+    // computed in that stop's own timezone (see gtfs.ts computeStopInstantUtc),
+    // so we simply read the boarding stop's instant — no hand-rolled overflow math.
     let origin = body.data.origin ?? schedule.origin
     let originName = schedule.originName ?? null
     let departureScheduled = schedule.departureScheduled
+    let arrivalScheduled = schedule.arrivalScheduled
+    let boardingStopCode = origin
+    let alightingStopCode = body.data.destination ?? schedule.destination
+
     if (body.data.boardingStop) {
-      const bs = body.data.boardingStop
-      const stopInfo = schedule.stops.find(s => s.code === bs.code)
+      const stopInfo = schedule.stops.find(s => s.code === body.data.boardingStop!.code)
       if (stopInfo) {
         origin = stopInfo.code
         originName = stopInfo.name
-        // Offset the departure time from the route origin using GTFS time strings.
-        // GTFS times are "ms from midnight on the service date" and can exceed 24h,
-        // so we cannot use setHours/setUTCHours — compute the offset instead.
-        const parseGtfsMs = (t: string): number => {
-          const parts = t.split(':').map(Number)
-          return ((parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0)) * 1000
-        }
-        const boardingTimeStr = bs.schDep ?? stopInfo.scheduledDep
-        if (boardingTimeStr) {
-          const originStop = schedule.stops[0]
-          const originMs = parseGtfsMs(originStop.scheduledDep ?? originStop.scheduledArr ?? '0:0:0')
-          const boardingMs = parseGtfsMs(boardingTimeStr)
-          departureScheduled = new Date(schedule.departureScheduled.getTime() + (boardingMs - originMs))
-        }
+        boardingStopCode = stopInfo.code
+        const inst = stopInfo.schDep ?? stopInfo.schArr
+        if (inst) departureScheduled = new Date(inst)
       }
     }
+    if (body.data.destination) {
+      const alightInfo = schedule.stops.find(s => s.code === body.data.destination)
+      if (alightInfo) {
+        alightingStopCode = alightInfo.code
+        const inst = alightInfo.schArr ?? alightInfo.schDep
+        if (inst) arrivalScheduled = new Date(inst)
+      }
+    }
+
+    // TR-4: prefer the live Amtraker consist's ISO scheduled times when available —
+    // they sidestep GTFS overflow math entirely. Match on the boarding stop code.
+    try {
+      const live = await fetchLiveTrainStatus(schedule.trainNumber, schedule.origin)
+      if (live) {
+        const boardLive = live.stops.find(s => s.code.toUpperCase() === boardingStopCode.toUpperCase())
+        if (boardLive?.schDep) departureScheduled = new Date(boardLive.schDep)
+        const alightLive = live.stops.find(s => s.code.toUpperCase() === alightingStopCode.toUpperCase())
+        if (alightLive?.schArr) arrivalScheduled = new Date(alightLive.schArr)
+      }
+    } catch { /* graceful fallback to GTFS */ }
 
     const train = await prisma.train.create({
       data: {
@@ -163,7 +178,7 @@ export async function trainRoutes(app: FastifyInstance): Promise<void> {
         originName,
         destinationName: schedule.destinationName ?? null,
         departureScheduled,
-        arrivalScheduled: schedule.arrivalScheduled,
+        arrivalScheduled,
         stopsJson: schedule.stops.length > 0 ? JSON.stringify(schedule.stops) : null,
         status: 'scheduled',
         lastPolledAt: null,

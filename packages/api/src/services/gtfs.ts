@@ -29,13 +29,25 @@ const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
+/**
+ * Unified stop shape shared by the GTFS schedule source and the Amtraker live
+ * source. Both paths emit absolute ISO-8601 UTC instants (`schArr`/`schDep`)
+ * plus the stop's own IANA timezone (`tz`) so the UI can render correct local
+ * times without re-doing any overflow/timezone math.
+ */
 export interface GtfsStop {
   code: string
   name: string
   lat: number
   lon: number
-  scheduledArr?: string // HH:MM:SS (may be > 24h)
-  scheduledDep?: string
+  tz: string
+  schArr: string | null // ISO-8601 UTC, e.g. "2026-06-27T13:50:00.000Z"
+  schDep: string | null // ISO-8601 UTC
+  arr: string | null
+  dep: string | null
+  arrCmnt: string | null
+  depCmnt: string | null
+  status: string
   stopSequence: number
 }
 
@@ -186,10 +198,12 @@ async function ensureGtfsFresh(): Promise<void> {
       console.log('[gtfs] Downloading Amtrak GTFS...')
       await downloadGtfs()
       await extractGtfs()
+      cachedMaxSpanDays = null // feed changed — recompute span lazily
       console.log('[gtfs] GTFS download and extraction complete')
     } else if (!existsSync(join(CACHE_EXTRACTED, 'trips.txt'))) {
       console.log('[gtfs] Extracting cached GTFS zip...')
       await extractGtfs()
+      cachedMaxSpanDays = null
     }
   }
 
@@ -218,7 +232,7 @@ function parseGtfsDate(s: string): Date {
  * Technique: format noon UTC in the target timezone to get the local clock reading,
  * then subtract those hours/minutes/seconds to find the UTC moment of local midnight.
  */
-function localMidnightUtc(dateStr: string, tz: string): Date {
+export function localMidnightUtc(dateStr: string, tz: string): Date {
   const [year, month, day] = dateStr.split('-').map(Number)
   // Use noon UTC as reference — safely within the same calendar day in any timezone
   const noonUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
@@ -248,7 +262,7 @@ function dowField(date: Date): string {
  * Parse a GTFS time string like "14:30:00" or "25:30:00" into milliseconds
  * from midnight.
  */
-function parseGtfsTime(s: string): number {
+export function parseGtfsTime(s: string): number {
   const parts = s.split(':')
   const h = parseInt(parts[0], 10)
   const m = parseInt(parts[1], 10)
@@ -257,14 +271,48 @@ function parseGtfsTime(s: string): number {
 }
 
 /**
- * Given a base date (local midnight in the origin station's timezone) and a GTFS
- * time string (which may exceed 24:00:00 for overnight trains), returns the actual
- * UTC datetime.
+ * THE canonical GTFS stop-instant computation. Anchors a stop's wall-clock time
+ * to THAT STOP'S OWN timezone — not the origin's. This is the core fix for the
+ * Empire Builder bug: an overflow time like "57:50:00" on a Seattle-origin
+ * (Pacific) service date is the wall-clock reading at the stop, so the absolute
+ * instant must be measured from that stop's local midnight, accounting for the
+ * Pacific→Central zone shift across the route.
+ *
+ * @param serviceDate  YYYY-MM-DD — the ORIGIN's GTFS service date
+ * @param stopTz       IANA tz of the stop the time belongs to
+ * @param overflowTime GTFS time string (may exceed 24:00:00), wall-clock at the stop
  */
-function gtfsTimeToDate(baseMidnightLocal: Date, timeStr: string): Date {
-  const msFromMidnight = parseGtfsTime(timeStr)
-  return new Date(baseMidnightLocal.getTime() + msFromMidnight)
+export function computeStopInstantUtc(
+  serviceDate: string,
+  stopTz: string,
+  overflowTime: string
+): Date {
+  return new Date(localMidnightUtc(serviceDate, stopTz).getTime() + parseGtfsTime(overflowTime))
 }
+
+// ── Dynamic max service-day span ────────────────────────────────────────────
+
+/**
+ * Compute, in one pass over stop_times, the maximum number of whole service days
+ * a trip can span: floor(maxDepartureOverflowHour / 24). The Empire Builder runs
+ * ~2 days, so its mid-route stops carry overflow times like "56:50:00" (hour 56
+ * → 2 days back). We must search that many days back from the user's boarding
+ * date to find the correct origin service date. Computed from the feed, never
+ * hardcoded.
+ */
+export function computeMaxServiceSpanDays(stopTimesRaw: Record<string, string>[]): number {
+  let maxHour = 0
+  for (const st of stopTimesRaw) {
+    const t = st.departure_time || st.arrival_time
+    if (!t) continue
+    const h = parseInt(t.split(':')[0], 10)
+    if (!Number.isNaN(h) && h > maxHour) maxHour = h
+  }
+  return Math.floor(maxHour / 24)
+}
+
+// Cached alongside the feed (reset whenever the feed is re-extracted).
+let cachedMaxSpanDays: number | null = null
 
 // ── Main export ───────────────────────────────────────────────────────────
 
@@ -316,13 +364,21 @@ export async function lookupTrainSchedule(
     const calendarRaw = await readGtfsFile('calendar.txt')
     const calendarDatesRaw = await readGtfsFile('calendar_dates.txt')
 
-    // 2. Try the user's date AND the day before.
-    // Multi-day trains (Empire Builder, Coast Starlight…) depart the origin station one
-    // calendar day before a mid-route boarding stop. GTFS keys the service to the
-    // origin-departure date, so if the user provides their boarding date (day N) the
-    // correct GTFS service may only exist on day N-1.
+    // Load stop times once and (lazily) compute the max service-day span from the feed.
+    const stopTimesRaw = await readGtfsFile('stop_times.txt')
+    if (cachedMaxSpanDays === null) {
+      cachedMaxSpanDays = computeMaxServiceSpanDays(stopTimesRaw)
+    }
+    const maxSpanDays = cachedMaxSpanDays
+
+    // 2. Try the user's date and every prior service date the feed can span.
+    // Multi-day trains (Empire Builder, Coast Starlight…) depart the origin station
+    // one OR MORE calendar days before a mid-route boarding stop. GTFS keys the
+    // service to the origin-departure date, so if the user provides their boarding
+    // date (day N) the correct GTFS service may only exist on day N-1, N-2, … The
+    // search window is derived from the feed (floor(maxOverflowHour/24)), not a constant.
     const candidates: Array<{ serviceDate: string; validTrip: Record<string,string> }> = []
-    for (let delta = 0; delta <= 1; delta++) {
+    for (let delta = 0; delta <= maxSpanDays; delta++) {
       const d = new Date(date + 'T00:00:00Z')
       d.setUTCDate(d.getUTCDate() - delta)
       const ds = d.toISOString().substring(0, 10)
@@ -339,7 +395,6 @@ export async function lookupTrainSchedule(
     for (const s of stopsRaw) {
       stopMap.set(s.stop_id, { name: s.stop_name ?? s.stop_id, lat: parseFloat(s.stop_lat) || 0, lon: parseFloat(s.stop_lon) || 0 })
     }
-    const stopTimesRaw = await readGtfsFile('stop_times.txt')
 
     // 4. Pick the best candidate: prefer the one whose origin departure is on or before the
     //    user's requested date (i.e. the trip that is actually running on the user's date).
@@ -390,25 +445,39 @@ export async function lookupTrainSchedule(
     const originInfo = stopMap.get(origin)
     const destInfo = stopMap.get(destination)
 
-    // Use the origin station's local timezone as the base for GTFS time arithmetic.
-    // GTFS times are local clock times, not UTC offsets — e.g. Empire Builder departs
-    // Seattle at 18:10 PST on service date June 26, stored as "18:10:00". Using the
-    // user's boarding date (June 27) as the midnight base would produce times 24h off.
-    const originTz = getAmtrakStationTzBackend(origin)
-    const baseMidnightLocal = localMidnightUtc(serviceDate, originTz)
+    // Each stop's GTFS time is the wall-clock at THAT stop, anchored to the
+    // service date's local midnight in THAT stop's timezone. computeStopInstantUtc
+    // is the single source of truth for this math (same helper the UI uses), so a
+    // Seattle-origin overflow like "56:50:00" at a Central-time MSP stop resolves
+    // to the correct absolute instant despite the Pacific→Central zone shift.
+    const origStopTz = getAmtrakStationTzBackend(origin)
+    const lastStopTz = getAmtrakStationTzBackend(destination)
 
-    const departureScheduled = gtfsTimeToDate(baseMidnightLocal, firstStop.departure_time || firstStop.arrival_time)
-    const arrivalScheduled = gtfsTimeToDate(baseMidnightLocal, lastStop.arrival_time || lastStop.departure_time)
+    const departureScheduled = computeStopInstantUtc(serviceDate, origStopTz, firstStop.departure_time || firstStop.arrival_time)
+    const arrivalScheduled = computeStopInstantUtc(serviceDate, lastStopTz, lastStop.arrival_time || lastStop.departure_time)
 
     const stops: GtfsStop[] = tripStopTimes.map(st => {
       const info = stopMap.get(st.stop_id)
+      const stopTz = getAmtrakStationTzBackend(st.stop_id)
+      const schArr = st.arrival_time
+        ? computeStopInstantUtc(serviceDate, stopTz, st.arrival_time).toISOString()
+        : null
+      const schDep = st.departure_time
+        ? computeStopInstantUtc(serviceDate, stopTz, st.departure_time).toISOString()
+        : null
       return {
         code: st.stop_id,
         name: info?.name ?? st.stop_id,
         lat: info?.lat ?? 0,
         lon: info?.lon ?? 0,
-        scheduledArr: st.arrival_time || undefined,
-        scheduledDep: st.departure_time || undefined,
+        tz: stopTz,
+        schArr,
+        schDep,
+        arr: null,
+        dep: null,
+        arrCmnt: null,
+        depCmnt: null,
+        status: '',
         stopSequence: parseInt(st.stop_sequence, 10),
       }
     })
