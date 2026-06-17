@@ -447,7 +447,7 @@ export function SettingsPage(): React.ReactElement {
             <div>
               <div className="settings-row-label">Simulate flight lifecycle</div>
               <div className="settings-row-sub">
-                Fires 6 push notifications over ~25 seconds — boarding → gate → departed → en route → landed → baggage.
+                Fires 6 push notifications over ~25 seconds — now boarding → gate change → pushed back → en route → landed → bags at carousel.
                 Close the app first so you see them as real background notifications.
               </div>
             </div>

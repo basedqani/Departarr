@@ -88,32 +88,28 @@ function fmtLocalTime(utcValue: string, airportIata?: string | null): string {
   return tz === 'UTC' ? `${formatted} UTC` : formatted
 }
 
-/** Friendly label for a status value coming from the data provider. */
-function statusLabel(raw: string): string {
-  switch (raw.toLowerCase()) {
-    case 'scheduled':      return 'Scheduled'
-    case 'boarding':       return 'Now Boarding'
-    case 'departed':       return 'Departed'
-    case 'en_route':
-    case 'en-route':       return 'En Route'
-    case 'landed':         return 'Landed'
-    case 'arrived':        return 'Arrived'
-    case 'cancelled':      return 'Cancelled'
-    case 'diverted':       return 'Diverted'
-    case 'delayed':        return 'Delayed'
-    default:               return raw
-  }
-}
-
 export interface PushNotification {
   title: string
   body: string
 }
 
+/** Render "+Nm" (or "" if not a positive delay) given two ISO timestamps. */
+function delayMinutes(oldValue?: string | null, newValue?: string | null): number | null {
+  if (!oldValue || !newValue) return null
+  const o = new Date(oldValue).getTime()
+  const n = new Date(newValue).getTime()
+  if (isNaN(o) || isNaN(n)) return null
+  return Math.round((n - o) / 60_000)
+}
+
 /**
  * Build a terse, Flighty-style push notification for a flight event.
  *
- * @param eventType   — one of the known event type strings
+ * Every branch returns a NON-EMPTY body. Event types are the explicit ones the
+ * poller derives (no generic `status_change` push). Each title is
+ * `${ident} · <State>` with the state spelled in plain words (never "/" or "_").
+ *
+ * @param eventType   — explicit event type (see poller diff logic)
  * @param ident       — flight identifier, e.g. "AA 2083"
  * @param oldValue    — previous value (gate, status, timestamp…)
  * @param newValue    — new value
@@ -128,64 +124,90 @@ export function buildPushNotification(
   originIata?: string | null,
   destIata?: string | null,
 ): PushNotification {
+  const hasOld = oldValue != null && oldValue !== 'null' && oldValue !== ''
+  const hasNew = newValue != null && newValue !== 'null' && newValue !== ''
+
   switch (eventType) {
+    case 'gate_assigned': {
+      const body = hasNew ? `Gate ${newValue}` : 'Gate assigned'
+      return { title: `${ident} · Gate ${hasNew ? newValue : 'assigned'}`, body }
+    }
+
     case 'gate_change': {
-      const hasOld = oldValue && oldValue !== 'null'
-      const hasNew = newValue && newValue !== 'null'
-      const gateDesc = hasOld && hasNew
-        ? `Gate ${oldValue} → ${newValue}`
-        : hasNew
-          ? `Gate ${newValue}`
-          : 'Gate updated'
-      const shortStatus = hasOld && hasNew ? 'Gate Change' : 'Gate Assigned'
-      return { title: `${ident} · ${shortStatus}`, body: gateDesc }
-    }
-
-    case 'delay': {
-      const oldStr = oldValue ? fmtLocalTime(oldValue, originIata) : null
-      const newStr = newValue ? fmtLocalTime(newValue, originIata) : null
-      const body = oldStr && newStr
-        ? `${oldStr} → ${newStr}`
-        : newStr ? `Now departs ${newStr}` : 'Departure time updated'
-      return { title: `${ident} · Delayed`, body }
-    }
-
-    case 'cancellation':
-      return {
-        title: `${ident} · Cancelled`,
-        body: 'Check airline app for rebooking.',
+      if (hasOld && hasNew) {
+        return { title: `${ident} · Gate change`, body: `Gate ${oldValue} → ${newValue}` }
       }
+      // Falls back to an assignment when there's no prior gate.
+      const body = hasNew ? `Gate ${newValue}` : 'Gate assigned'
+      return { title: `${ident} · Gate ${hasNew ? newValue : 'assigned'}`, body }
+    }
+
+    case 'boarding':
+      return { title: `${ident} · Now boarding`, body: 'Now boarding' }
 
     case 'departure': {
-      const timeStr = newValue ? fmtLocalTime(newValue, originIata) : null
+      const timeStr = hasNew ? fmtLocalTime(newValue!, originIata) : null
       const body = timeStr ? `Pushed back at ${timeStr}` : 'Pushed back from gate'
-      return { title: `${ident} · Departed Gate`, body }
+      return { title: `${ident} · Pushed back`, body }
     }
 
+    case 'en_route':
     case 'takeoff': {
-      const timeStr = newValue ? fmtLocalTime(newValue, originIata) : null
-      const body = timeStr ? `Wheels up at ${timeStr}` : 'Airborne'
-      return { title: `${ident} · Airborne`, body }
+      const timeStr = hasNew ? fmtLocalTime(newValue!, originIata) : null
+      // `oldValue` carries the arrival ETA (dest tz) when available.
+      const etaStr = hasOld ? fmtLocalTime(oldValue!, destIata) : null
+      let body: string
+      if (timeStr && etaStr) body = `Airborne at ${timeStr} · arrives ${etaStr}`
+      else if (timeStr) body = `Airborne at ${timeStr}`
+      else if (etaStr) body = `Airborne · arrives ${etaStr}`
+      else body = 'Airborne'
+      return { title: `${ident} · En route`, body }
     }
 
     case 'arrival': {
-      const timeStr = newValue ? fmtLocalTime(newValue, destIata) : null
+      const timeStr = hasNew ? fmtLocalTime(newValue!, destIata) : null
       const body = timeStr ? `Landed at ${timeStr}` : 'Landed'
       return { title: `${ident} · Landed`, body }
     }
 
-    case 'baggage': {
-      const body = newValue ? `Carousel ${newValue}` : 'Baggage claim info updated'
-      return { title: `${ident} · Baggage`, body }
+    case 'at_gate': {
+      const timeStr = hasNew ? fmtLocalTime(newValue!, destIata) : null
+      const body = timeStr ? `At the gate at ${timeStr}` : 'At the gate'
+      return { title: `${ident} · At the gate`, body }
     }
 
-    case 'status_change': {
-      const label = newValue ? statusLabel(newValue) : 'Status updated'
-      return { title: `${ident} · ${label}`, body: '' }
+    case 'baggage': {
+      const body = hasNew ? `Bags at carousel ${newValue}` : 'Bags on the way to carousel'
+      return { title: `${ident} · Bags at carousel ${hasNew ? newValue : 'soon'}`, body }
+    }
+
+    case 'delay':
+    case 'delay_departure': {
+      const newStr = hasNew ? fmtLocalTime(newValue!, originIata) : null
+      const mins = delayMinutes(oldValue, newValue)
+      const suffix = mins != null && mins > 0 ? `, +${mins}m` : ''
+      const body = newStr ? `Now ${newStr}${suffix}` : 'Departure delayed'
+      return { title: `${ident} · Delayed`, body }
+    }
+
+    case 'delay_arrival': {
+      const newStr = hasNew ? fmtLocalTime(newValue!, destIata) : null
+      const mins = delayMinutes(oldValue, newValue)
+      const suffix = mins != null && mins > 0 ? `, +${mins}m` : ''
+      const body = newStr ? `Now arriving ${newStr}${suffix}` : 'Arriving later'
+      return { title: `${ident} · Arriving later`, body }
+    }
+
+    case 'cancellation':
+      return { title: `${ident} · Cancelled`, body: 'Check airline app for rebooking.' }
+
+    case 'diverted': {
+      const body = hasNew ? `Now heading to ${newValue}` : 'Flight diverted'
+      return { title: `${ident} · Diverted`, body }
     }
 
     default:
-      return { title: `${ident} · Update`, body: eventType }
+      return { title: `${ident} · Update`, body: eventType.replace(/_/g, ' ') }
   }
 }
 

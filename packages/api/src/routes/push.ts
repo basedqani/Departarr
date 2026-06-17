@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getConfig } from '../lib/config.js'
 import { authMiddleware } from '../middleware/auth.js'
-import { sendPushToUser, sendPushToShareSubscribers } from '../services/webPush.js'
+import { sendPushToUser, sendPushToShareSubscribers, buildPushNotification } from '../services/webPush.js'
 
 const subscribeSchema = z.object({
   endpoint: z.string().url(),
@@ -68,44 +68,26 @@ export async function pushRoutes(app: FastifyInstance): Promise<void> {
     const origin = flight.origin
     const dest = flight.destination
 
-    const steps: Array<{ delayMs: number; eventType: string; title: string; message: string }> = [
-      {
-        delayMs: 0,
-        eventType: 'status_change',
-        title: `${ident} · Now Boarding`,
-        message: `Gate B12 · ${origin} → ${dest}`,
-      },
-      {
-        delayMs: 5_000,
-        eventType: 'gate_change',
-        title: `${ident} · Gate Change`,
-        message: `Gate B12 → C7`,
-      },
-      {
-        delayMs: 10_000,
-        eventType: 'departure',
-        title: `${ident} · Departed`,
-        message: `Pushed back from ${origin}`,
-      },
-      {
-        delayMs: 15_000,
-        eventType: 'status_change',
-        title: `${ident} · En Route`,
-        message: `Cruising to ${dest}`,
-      },
-      {
-        delayMs: 20_000,
-        eventType: 'arrival',
-        title: `${ident} · Landed`,
-        message: `Arrived at ${dest}`,
-      },
-      {
-        delayMs: 25_000,
-        eventType: 'baggage',
-        title: `${ident} · Baggage`,
-        message: `Carousel 4`,
-      },
+    // Build each step's copy through buildPushNotification so the simulator
+    // shows EXACTLY what real notifications look like (NOTE-6). Synthetic
+    // timestamps drive the time-based bodies.
+    const now = Date.now()
+    const t = (offsetMin: number): string => new Date(now + offsetMin * 60_000).toISOString()
+    const arriveEta = t(120)
+
+    const stepDefs: Array<{ delayMs: number; eventType: string; oldValue?: string | null; newValue?: string | null }> = [
+      { delayMs: 0, eventType: 'boarding' },
+      { delayMs: 5_000, eventType: 'gate_change', oldValue: 'B12', newValue: 'C7' },
+      { delayMs: 10_000, eventType: 'departure', newValue: t(0) },
+      { delayMs: 15_000, eventType: 'en_route', oldValue: arriveEta, newValue: t(5) },
+      { delayMs: 20_000, eventType: 'arrival', newValue: t(120) },
+      { delayMs: 25_000, eventType: 'baggage', newValue: '4' },
     ]
+
+    const steps = stepDefs.map(s => {
+      const n = buildPushNotification(s.eventType, ident, s.oldValue ?? null, s.newValue ?? null, origin, dest)
+      return { delayMs: s.delayMs, eventType: s.eventType, title: n.title, message: n.body }
+    })
 
     // Fire in background — don't block the response
     ;(async () => {

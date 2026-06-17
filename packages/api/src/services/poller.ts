@@ -6,7 +6,12 @@ import { isActiveProviderOverBudget } from './flightAware.js'
 import type { Flight } from '@prisma/client'
 
 const POLL_INTERVAL_MS = 60_000
+// `landed` is reconciled to `arrived` by normalizeStatus (NOTE-7), so the single
+// terminal arrival state here is `arrived`.
 const TERMINAL_STATUSES = new Set(['arrived', 'cancelled', 'diverted'])
+
+// Only notify on a delay of at least this many minutes (NOTE-5).
+const MIN_NOTIFIABLE_DELAY_MS = 10 * 60 * 1000
 
 // ── Interval constants (ms) ────────────────────────────────────────────────
 const MIN_15  =  15 * 60 * 1000
@@ -101,6 +106,9 @@ interface FieldDiff {
   eventType: string
   oldValue: string | null
   newValue: string | null
+  /** Whether this diff should fire a PUSH notification. History-only diffs
+   *  (e.g. the generic status_change kept for FlightDetail) set this false. */
+  notify: boolean
 }
 
 function diffFlights(stored: FlightFields, fresh: FlightData): FieldDiff[] {
@@ -110,36 +118,104 @@ function diffFlights(stored: FlightFields, fresh: FlightData): FieldDiff[] {
     field: string,
     eventType: string,
     oldVal: string | Date | null | undefined,
-    newVal: string | Date | null | undefined
+    newVal: string | Date | null | undefined,
+    notify = true,
+    extraOld?: string | Date | null,
   ): void {
     const oldStr = oldVal != null ? String(oldVal) : null
     const newStr = newVal != null ? String(newVal) : null
     if (oldStr !== newStr && newStr !== null) {
-      diffs.push({ field, eventType, oldValue: oldStr, newValue: newStr })
+      const carriedOld = extraOld != null ? String(extraOld) : oldStr
+      diffs.push({ field, eventType, oldValue: carriedOld, newValue: newStr, notify })
     }
   }
 
-  check('status', 'status_change', stored.status, fresh.status)
-  check('gateDeparture', 'gate_change', stored.gateDeparture, fresh.gateDeparture)
-  check('gateArrival', 'gate_change', stored.gateArrival, fresh.gateArrival)
-  check('departureEstimated', 'delay', stored.departureEstimated, fresh.departureEstimated)
+  const statusChanged = stored.status !== fresh.status
+
+  // ── Generic status_change: HISTORY ONLY, never pushed (NOTE-2) ────────────
+  // FlightDetail reads this from the flightEvent table; it carries no useful
+  // push body, so we keep writing it but exclude it from notifiable diffs.
+  check('status', 'status_change', stored.status, fresh.status, false)
+
+  // ── Explicit events derived from status transitions (NOTE-2) ─────────────
+  if (statusChanged) {
+    if (fresh.status === 'boarding') {
+      diffs.push({ field: 'status', eventType: 'boarding', oldValue: stored.status, newValue: 'boarding', notify: true })
+    }
+    if (fresh.status === 'en_route') {
+      // Merge takeoff into en_route; carry arrival ETA as oldValue for the body.
+      const eta = fresh.arrivalEstimated ?? fresh.landingEstimated ?? fresh.arrivalScheduled
+      diffs.push({
+        field: 'status',
+        eventType: 'en_route',
+        oldValue: eta != null ? String(eta) : null,
+        newValue: fresh.takeoffActual != null ? String(fresh.takeoffActual) : String(fresh.status),
+        notify: true,
+      })
+    }
+    if (fresh.status === 'diverted') {
+      diffs.push({ field: 'status', eventType: 'diverted', oldValue: stored.status, newValue: fresh.destination ?? null, notify: true })
+    }
+    if (fresh.status === 'arrived') {
+      // "At the gate" — terminal arrival. arrivalActual time used in body.
+      diffs.push({
+        field: 'status',
+        eventType: 'at_gate',
+        oldValue: stored.status,
+        newValue: fresh.arrivalActual != null ? String(fresh.arrivalActual) : String(fresh.status),
+        notify: true,
+      })
+    }
+  }
+
+  // ── Gate: assigned (no prior) vs changed (prior existed) ─────────────────
+  gateDiff(diffs, 'gateDeparture', stored.gateDeparture, fresh.gateDeparture)
+  gateDiff(diffs, 'gateArrival', stored.gateArrival, fresh.gateArrival)
+
+  // ── Delay: split departure vs arrival by which field changed (NOTE-3) ─────
+  check('departureEstimated', 'delay_departure', stored.departureEstimated, fresh.departureEstimated)
+  check('arrivalEstimated', 'delay_arrival', stored.arrivalEstimated, fresh.arrivalEstimated)
+  check('takeoffEstimated', 'delay_departure', stored.takeoffEstimated, fresh.takeoffEstimated)
+  check('landingEstimated', 'delay_arrival', stored.landingEstimated, fresh.landingEstimated)
+
+  // ── OOOI events ──────────────────────────────────────────────────────────
   check('departureActual', 'departure', stored.departureActual, fresh.departureActual)
-  check('arrivalEstimated', 'delay', stored.arrivalEstimated, fresh.arrivalEstimated)
+  // takeoffActual = wheels-off; merged into en_route copy. Carry arrival ETA as
+  // oldValue for the body. Distinct eventType avoids dedup vs gate-out.
+  if (stored.takeoffActual == null && fresh.takeoffActual != null) {
+    const eta = fresh.arrivalEstimated ?? fresh.landingEstimated ?? fresh.arrivalScheduled
+    check('takeoffActual', 'en_route', stored.takeoffActual, fresh.takeoffActual, true, eta)
+  }
   check('arrivalActual', 'arrival', stored.arrivalActual, fresh.arrivalActual)
-  check('baggageClaim', 'baggage', stored.baggageClaim, fresh.baggageClaim)
-  check('takeoffEstimated', 'delay', stored.takeoffEstimated, fresh.takeoffEstimated)
-  // takeoffActual = wheels-off (runway detection); use distinct eventType so it
-  // isn't deduplicated against departureActual (gate-out) in the same poll cycle.
-  check('takeoffActual', 'takeoff', stored.takeoffActual, fresh.takeoffActual)
-  check('landingEstimated', 'delay', stored.landingEstimated, fresh.landingEstimated)
   check('landingActual', 'arrival', stored.landingActual, fresh.landingActual)
 
-  // Cancellation
+  check('baggageClaim', 'baggage', stored.baggageClaim, fresh.baggageClaim)
+
+  // ── Cancellation ─────────────────────────────────────────────────────────
   if (fresh.status === 'cancelled' && stored.status !== 'cancelled') {
-    diffs.push({ field: 'status', eventType: 'cancellation', oldValue: stored.status, newValue: 'cancelled' })
+    diffs.push({ field: 'status', eventType: 'cancellation', oldValue: stored.status, newValue: 'cancelled', notify: true })
   }
 
   return diffs
+}
+
+/** Push a gate diff as `gate_assigned` (no prior gate) or `gate_change`. */
+function gateDiff(
+  diffs: FieldDiff[],
+  field: string,
+  oldVal: string | null | undefined,
+  newVal: string | null | undefined,
+): void {
+  const oldStr = oldVal != null && oldVal !== '' ? oldVal : null
+  const newStr = newVal != null && newVal !== '' ? newVal : null
+  if (newStr === null || oldStr === newStr) return
+  diffs.push({
+    field,
+    eventType: oldStr ? 'gate_change' : 'gate_assigned',
+    oldValue: oldStr,
+    newValue: newStr,
+    notify: true,
+  })
 }
 
 // ── Per-flight apply (write DB + notify) ──────────────────────────────────
@@ -191,20 +267,23 @@ async function applyFreshData(flight: Flight, fresh: FlightData): Promise<void> 
   const alreadyDeparted =
     flight.departureActual != null ||
     fresh.status === 'en_route' ||
-    fresh.status === 'en-route' ||
     fresh.status === 'arrived'
 
   const notifiableDiffs = uniqueDiffs.filter(d => {
+    // History-only diffs (e.g. generic status_change) are never pushed (NOTE-2)
+    if (!d.notify) return false
     // Suppress departure delays once the plane has left
-    if (
-      alreadyDeparted &&
-      d.eventType === 'delay' &&
-      (d.field === 'departureEstimated' || d.field === 'takeoffEstimated')
-    ) return false
-    // Suppress gate changes after departure
-    if (alreadyDeparted && d.eventType === 'gate_change') return false
-    // Never notify for 'delay' on arrival fields when already arrived
-    if (fresh.status === 'arrived' && d.eventType === 'delay') return false
+    if (alreadyDeparted && d.eventType === 'delay_departure') return false
+    // Suppress gate changes/assignments after departure
+    if (alreadyDeparted && (d.eventType === 'gate_change' || d.eventType === 'gate_assigned')) return false
+    // Never notify for arrival delay once already arrived
+    if (fresh.status === 'arrived' && d.eventType === 'delay_arrival') return false
+    // Only notify on a delay of ≥10 min (NOTE-5)
+    if (d.eventType === 'delay_departure' || d.eventType === 'delay_arrival') {
+      if (d.oldValue == null) return false
+      const delta = new Date(d.newValue!).getTime() - new Date(d.oldValue).getTime()
+      if (isNaN(delta) || delta < MIN_NOTIFIABLE_DELAY_MS) return false
+    }
     return true
   })
 

@@ -2,6 +2,7 @@ import { getSettingWithEnvFallback } from '../lib/settings.js'
 import { incrementUsage, isOverBudget } from '../lib/apiBudget.js'
 import { generateStubFlight } from './stubData.js'
 import { lookupAeroDataBox, lookupAllLegsAeroDataBox, getAeroDataBoxKey, ADB_PROVIDER } from './aeroDataBox.js'
+import { normalizeStatus } from '../lib/flightStatus.js'
 
 const AEROAPI_BASE = 'https://aeroapi.flightaware.com/aeroapi'
 
@@ -86,7 +87,7 @@ function mapFlight(f: any): FlightData {
     landingScheduled: parseDate(f.scheduled_on),
     landingEstimated: parseDate(f.estimated_on),
     landingActual: parseDate(f.actual_on),
-    status: (f.status ?? 'scheduled').toLowerCase().replace(/\s+/g, '_'),
+    status: normalizeStatus(f.status).status,
     gateDeparture: f.gate_origin ?? undefined,
     gateArrival: f.gate_destination ?? undefined,
     terminalDeparture: f.terminal_origin ?? undefined,

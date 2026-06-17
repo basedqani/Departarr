@@ -254,28 +254,46 @@ function formatEventLabel(
   dest: string,
 ): string {
   switch (eventType) {
+    case 'gate_assigned':
+      return newValue ? `Gate assigned: ${newValue}` : 'Gate assigned'
     case 'gate_change': {
       if (oldValue && newValue) return `Gate changed from ${oldValue} to ${newValue}`
       if (newValue) return `Gate assigned: ${newValue}`
       return 'Gate updated'
     }
-    case 'delay': {
+    case 'boarding':
+      return 'Now boarding'
+    case 'delay':
+    case 'delay_departure': {
       const oldT = fmtTime(oldValue, origin)
       const newT = fmtTime(newValue, origin)
       if (oldT && newT) return `Departure delayed: ${oldT} → ${newT}`
-      if (newT) return `Departure updated to ${newT}`
+      if (newT) return `Now departing ${newT}`
       return 'Departure time changed'
+    }
+    case 'delay_arrival': {
+      const oldT = fmtTime(oldValue, dest)
+      const newT = fmtTime(newValue, dest)
+      if (oldT && newT) return `Arriving later: ${oldT} → ${newT}`
+      if (newT) return `Now arriving ${newT}`
+      return 'Arrival time changed'
     }
     case 'departure':
       return `Pushed back from gate${newValue ? ` at ${fmtTime(newValue, origin)}` : ''}`
+    case 'en_route':
     case 'takeoff':
-      return `Airborne${newValue ? ` at ${fmtTime(newValue, origin)}` : ''}`
+      // For en_route, newValue carries the wheels-up time (origin tz).
+      return `En route${newValue ? ` · airborne at ${fmtTime(newValue, origin)}` : ''}`
     case 'arrival':
       return `Landed${newValue ? ` at ${fmtTime(newValue, dest)}` : ''}`
+    case 'at_gate':
+      return `At the gate${newValue ? ` at ${fmtTime(newValue, dest)}` : ''}`
     case 'baggage':
-      return newValue ? `Baggage claim: Carousel ${newValue}` : 'Baggage claim updated'
+      return newValue ? `Bags at carousel ${newValue}` : 'Baggage claim updated'
     case 'cancellation':
       return 'Flight cancelled'
+    case 'diverted':
+      return newValue ? `Diverted — now heading to ${newValue}` : 'Flight diverted'
     case 'status_change':
       return newValue ? `Status: ${newValue.replace(/_/g, ' ')}` : 'Status updated'
     default:
