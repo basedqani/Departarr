@@ -15,5 +15,8 @@ data/
 .tools/
 .tmp_*
 
-# agent worktrees & local docs
+# agent worktrees
 .claude/worktrees/
+
+# personal improvement checklist — never pushed
+IMPROVEMENTS.local.md
